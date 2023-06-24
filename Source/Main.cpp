@@ -9,12 +9,13 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include "pch.h"
+#include "Mesh.h"
 
 // Global variables for the window and DirectX
 SDL_Window* GWindow = nullptr;
 HWND GWindowHandle = nullptr;
 
-int LoadImageDataFromFile(BYTE** imageData, D3D12_RESOURCE_DESC& resourceDescription, LPCWSTR filename, int& bytesPerRow)
+int LoadImageDataFromFile(BYTE** imageData, D3D12_RESOURCE_DESC& resourceDescription, LPCWSTR filename, UINT64& bytesPerRow)
 {
 	static IWICImagingFactory2 *wicFactory;
 
@@ -51,9 +52,9 @@ int LoadImageDataFromFile(BYTE** imageData, D3D12_RESOURCE_DESC& resourceDescrip
 		//TODO convert the image https://www.braynzarsoft.net/viewtutorial/q16390-directx-12-textures-from-file
 	}
 
-    int bitsPerPixel = GetDXGIFormatBitsPerPixel(dxgiFormat);
-    bytesPerRow = (textureWidth * bitsPerPixel) * 8;
-    int imageSize = bytesPerRow * textureHeight;
+    UINT64 bitsPerPixel = GetDXGIFormatBitsPerPixel(dxgiFormat);
+    bytesPerRow = (textureWidth * bitsPerPixel) / 8;
+    UINT64 imageSize = bytesPerRow * textureHeight;
 
     *imageData = (BYTE*)malloc(imageSize);
 
@@ -86,6 +87,8 @@ bool InitializeWindow(int width, int height)
         return false;
     }
 
+	SDL_SetRelativeMouseMode(SDL_TRUE);
+
     // Create window
     GWindow = SDL_CreateWindow("DirectX12 Window", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, SDL_WINDOW_SHOWN);
     if (GWindow == nullptr)
@@ -97,7 +100,9 @@ bool InitializeWindow(int width, int height)
     SDL_VERSION(&wmInfo.version);
     SDL_GetWindowWMInfo(GWindow, &wmInfo);
     GWindowHandle = wmInfo.info.win.window;
-    return true;
+
+    //SDL_SetWindowGrab(GWindow, SDL_TRUE);
+	return true;
 }
 
 inline std::vector<char> readFile(const std::string& filename)
@@ -216,8 +221,8 @@ int main(int argc, char* argv[])
     viewport.TopLeftY = 0.0f;
     viewport.Width = windowWidth;
     viewport.Height = windowHeight;
-    viewport.MinDepth = .1f;
-    viewport.MaxDepth = 1000.f;
+    viewport.MinDepth = 0.0f;
+    viewport.MaxDepth = 1.0f;
 
     DXGI_SWAP_CHAIN_DESC1 swapchainDesc = {};
     swapchainDesc.BufferCount = backbufferCount;
@@ -249,7 +254,41 @@ int main(int argc, char* argv[])
         rtvHandle.ptr += (1 * rtvDescriptorSize);
     }
 
-    //create texture ??
+	//create depth stencil
+    ID3D12Resource* depthStencilBuffer;
+    ID3D12DescriptorHeap* dsDescriptorHeap;
+
+    D3D12_DESCRIPTOR_HEAP_DESC dsvHeapDesc = {};
+    dsvHeapDesc.NumDescriptors = 1;
+    dsvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_DSV;
+    dsvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    ThrowIfFailed(device->CreateDescriptorHeap(&dsvHeapDesc, IID_PPV_ARGS(&dsDescriptorHeap)));
+
+    D3D12_DEPTH_STENCIL_VIEW_DESC depthStencilDesc = {};
+    depthStencilDesc.Format = DXGI_FORMAT_D32_FLOAT;
+    depthStencilDesc.ViewDimension = D3D12_DSV_DIMENSION_TEXTURE2D;
+    depthStencilDesc.Flags = D3D12_DSV_FLAG_NONE;
+
+	D3D12_CLEAR_VALUE depthOptimizedClearValue = {};
+	depthOptimizedClearValue.Format = DXGI_FORMAT_D32_FLOAT;
+	depthOptimizedClearValue.DepthStencil.Depth = 1.0f;
+	depthOptimizedClearValue.DepthStencil.Stencil = 0;
+
+	ThrowIfFailed(device->CreateCommittedResource(
+		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
+		D3D12_HEAP_FLAG_NONE,
+		&CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_D32_FLOAT, windowWidth, windowHeight, 1, 0, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL),
+		D3D12_RESOURCE_STATE_DEPTH_WRITE,
+		&depthOptimizedClearValue,
+		IID_PPV_ARGS(&depthStencilBuffer)
+    ));
+	dsDescriptorHeap->SetName(L"Depth/Stencil Resource Heap");
+
+	device->CreateDepthStencilView(depthStencilBuffer, &depthStencilDesc, dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+
+
+    //create texture
     ID3D12Resource* textureBuffer;
     ID3D12Resource* textureBufferUploadHeap;
 
@@ -269,9 +308,9 @@ int main(int argc, char* argv[])
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
     D3D12_RESOURCE_DESC textureDesc;
-    int imageBytesPerRow;
+    UINT64 imageBytesPerRow;
     BYTE* imageData;
-    int imageSize = LoadImageDataFromFile(&imageData, textureDesc, L"../Assets/texture.png", imageBytesPerRow);
+    UINT64 imageSize = LoadImageDataFromFile(&imageData, textureDesc, L"../Assets/lost_empire-RGBA.png", imageBytesPerRow);
 
     ThrowIfFailed(device->CreateCommittedResource(
 		&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT),
@@ -376,26 +415,21 @@ int main(int argc, char* argv[])
         signature = nullptr;
     }
     
-    // Define the vertex structure
-    struct Vertex
-    {
-        float position[3];
-        float color[3];
-        float uv[2];
-    };
-
     // Vertex data for the triangle
     Vertex vertexBufferData[3] =
     {
-        { { 0.0f, 0.5f, 0.0f }, { 1.0f, 0.0f, 0.0f }, {0.5f, 0.f} },
-        { { 0.5f, -0.5f, 0.0f }, { 0.0f, 1.0f, 0.0f }, {0.02f, 1.f} },
-        { { -0.5f, -0.5f, 0.0f }, { 0.0f, 0.0f, 1.0f }, {0.98f, 1.f} }
+        { {0.0f, 0.5f, 0.0f}, {0.f, 0.f, 0.f}, {1.0f, 0.0f, 0.0f}, {0.5f, 0.f} },
+        { {0.5f, -0.5f, 0.0f}, {0.f, 0.f, 0.f}, {0.0f, 1.0f, 0.0f}, {0.02f, 1.f} },
+        { {-0.5f, -0.5f, 0.0f},{0.f, 0.f, 0.f}, {0.0f, 0.0f, 1.0f}, {0.98f, 1.f} }
     };
+
+    Mesh mesh;
+    mesh.loadFromObj("../Assets/lost_empire.obj");
 
     ID3D12Resource* vertexBuffer;
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
 
-    const UINT vertexBufferSize = sizeof(vertexBufferData);
+    const UINT vertexBufferSize = mesh._vertices.size() * sizeof(Vertex);
 
     D3D12_HEAP_PROPERTIES heapProps;
     heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
@@ -427,7 +461,7 @@ int main(int argc, char* argv[])
 
 
     ThrowIfFailed(vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-    memcpy(pVertexDataBegin, vertexBufferData, sizeof(vertexBufferData));
+    memcpy(pVertexDataBegin, mesh._vertices.data(), vertexBufferSize);
     vertexBuffer->Unmap(0, nullptr);
 
     vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
@@ -486,9 +520,9 @@ int main(int argc, char* argv[])
 		glm::mat4 viewMatrix;
 	} cbVS;
 
-    cbVS.projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 0.1f, 10.f);
-    glm::vec3 eye(0.f, 0.f, -3.f);
-    glm::vec3 eye_dir(0.f,0.f,1.f);
+    cbVS.projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 0.01f, 1000.f);
+    glm::vec3 eye(25.2203f, 44.637f, -12.9169f);
+    glm::vec3 eye_dir(-0.409304f, -0.27564f, 0.896766f);
     glm::vec3 up(0.f, 1.f, 0.f);
     cbVS.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
     cbVS.modelMatrix = glm::mat4(1.f);
@@ -580,14 +614,7 @@ int main(int argc, char* argv[])
     ID3D12PipelineState* pipelineState;
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 
-    D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
-		{{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0,
-		 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-		{"COLOR", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 12,
-		D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0},
-		{"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 24,
-		D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0}};
-	psoDesc.InputLayout = {inputElementDescs, _countof(inputElementDescs)};
+	psoDesc.InputLayout = {Vertex::Description, _countof(Vertex::Description)};
 	psoDesc.pRootSignature = rootSignature;
 
 	psoDesc.VS = vsBytecode;
@@ -605,7 +632,8 @@ int main(int argc, char* argv[])
 	rasterDesc.AntialiasedLineEnable = FALSE;
 	rasterDesc.ForcedSampleCount = 0;
 	rasterDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
-	psoDesc.RasterizerState = rasterDesc;
+	//psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+    psoDesc.RasterizerState = rasterDesc;
 	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
 	D3D12_BLEND_DESC blendDesc;
@@ -625,10 +653,10 @@ int main(int argc, char* argv[])
 	};
 	for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
 		blendDesc.RenderTarget[i] = defaultRenderTargetBlendDesc;
-	psoDesc.BlendState = blendDesc;
-
-	psoDesc.DepthStencilState.DepthEnable = FALSE;
-	psoDesc.DepthStencilState.StencilEnable = FALSE;
+	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+    //psoDesc.DepthStencilState.DepthEnable = FALSE;
+	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+    psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 	psoDesc.SampleMask = UINT_MAX;
 
 	psoDesc.NumRenderTargets = 1;
@@ -667,7 +695,6 @@ int main(int argc, char* argv[])
     float speed = 0.1f;
     static const glm::vec3 forward(0.f,0.f,1.f);
     static const glm::vec3 right(-1.f,0.f,0.f);
-    int mx = windowWidth / 2, my = windowHeight / 2;
     bool captureDir = false;
     while (!quit)
     {
@@ -682,20 +709,19 @@ int main(int argc, char* argv[])
 	            switch (event.key.keysym.sym)
 	            {
 					case SDLK_w:
-						eye += forward * speed;
+						eye += eye_dir * speed;
 						break;
-					case SDLK_d:
-						eye += right * speed;
+	            case SDLK_d:
+						eye += glm::cross(eye_dir, up) * speed;
 						break;
 	            	case SDLK_s:
-						eye -= forward * speed;
+
+						eye -= eye_dir * speed;
 						break;
 					case SDLK_a:
-						eye -= right * speed;
+						eye -= glm::cross(eye_dir, up) * speed;
 						break;
 					case SDLK_r:
-                        mx = windowWidth / 2;
-	            	    my = windowHeight / 2;
 						eye = glm::vec3(0.f, 0.f, -3.f);
 						eye_dir =  glm::vec3(0.f,0.f,1.f);
 						up =  glm::vec3(0.f, 1.f, 0.f);
@@ -707,23 +733,30 @@ int main(int argc, char* argv[])
             if(event.type == SDL_MOUSEBUTTONDOWN)
             {
                 captureDir = true;
-				SDL_GetMouseState(&mx, &my);
             }
 		}
         if(captureDir)
         {
 			int x, y;
-			SDL_GetMouseState(&x, &y);
-            glm::vec2 dir((float)(mx - x) / windowWidth, (float)(my - y) / windowHeight);
-            eye_dir -= right * dir.x;
-            eye_dir += up * dir.y;
-			mx = x;
-			my = y;
+            static float yaw = 0.0f, pitch = 0.0f;
+			SDL_GetRelativeMouseState(&x, &y);
+            yaw += x * 0.2f;
+            pitch += y * 0.2f;
+            glm::vec3 direction;
+			direction.x = cos(glm::radians(yaw)) * cos(glm::radians(pitch));
+			direction.y = sin(glm::radians(pitch));
+			direction.z = sin(glm::radians(yaw)) * cos(glm::radians(pitch));
+            eye_dir = direction;
         }
 
         
 		cbVS.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
-		cbVS.modelMatrix = glm::rotate(cbVS.modelMatrix, glm::radians(1.0f), glm::vec3(0.f, 1.f, 0.f));
+
+        //std::cout << "eye " << eye.x << " " << eye.y << " " << eye.z << std::endl;
+        //std::cout << "eye dir " << eye_dir.x << " " << eye_dir.y << " " << eye_dir.z << std::endl;
+        //std::cout << "up " << up.x << " " << up.y << " " << up.z << std::endl;
+        //std::cout << "==========================================================" << std::endl;
+		//cbVS.modelMatrix = glm::rotate(cbVS.modelMatrix, glm::radians(1.0f), glm::vec3(0.f, 1.f, 0.f));
 		memcpy(mappedConstantBuffer, &cbVS, sizeof(cbVS));
 
 		ThrowIfFailed(commandAllocator->Reset());
@@ -751,7 +784,15 @@ int main(int argc, char* argv[])
 		D3D12_CPU_DESCRIPTOR_HANDLE
 			rtvHandle2(renderTargetViewHeap->GetCPUDescriptorHandleForHeapStart());
 		rtvHandle2.ptr = rtvHandle2.ptr + (frameIndex * rtvDescriptorSize);
-		commandList->OMSetRenderTargets(1, &rtvHandle2, FALSE, nullptr);
+
+		CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+
+        commandList->OMSetRenderTargets(1, &rtvHandle2, FALSE, &dsvHandle);
+        //commandList->OMSetRenderTargets(1, &rtvHandle2, FALSE, nullptr);
+
+
+        commandList->ClearDepthStencilView(dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+                                           D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
 
 		const float clearColor[] = {0.0f, 0.0f, 0.0f, 1.0f};
 		commandList->RSSetViewports(1, &viewport);
@@ -759,9 +800,10 @@ int main(int argc, char* argv[])
 		commandList->ClearRenderTargetView(rtvHandle2, clearColor, 0, nullptr);
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 		commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
-		commandList->IASetIndexBuffer(&indexBufferView);
+		//commandList->IASetIndexBuffer(&indexBufferView);
+        commandList->DrawInstanced(mesh._vertices.size(), 1, 0, 0);
 
-		commandList->DrawIndexedInstanced(3, 1, 0, 0, 0);
+		//commandList->DrawIndexedInstanced(3, 1, 0, 0, 0);
 
 		D3D12_RESOURCE_BARRIER presentBarrier;
 		presentBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;

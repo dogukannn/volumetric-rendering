@@ -40,3 +40,4 @@ int GetDXGIFormatBitsPerPixel(DXGI_FORMAT& dxgiFormat);
 
 // get the dxgi format equivilent of a wic format
 DXGI_FORMAT GetDXGIFormatFromWICFormat(WICPixelFormatGUID& wicFormatGUID);
+

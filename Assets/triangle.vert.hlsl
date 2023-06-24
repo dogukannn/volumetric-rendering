@@ -11,6 +11,7 @@ SamplerState s1 : register(s0);
 struct VertexInput
 {
     float3 inPos : POSITION;
+    float3 inNormal : NORMAL;
     float3 inColor : COLOR;
     float2 inUV : TEXCOORD;
 };
@@ -19,6 +20,7 @@ struct VertexOutput
 {
     float3 color : COLOR;
     float4 position : SV_Position;
+    float3 normal : NORMAL;
     float2 uv : TEXCOORD;
 };
 
@@ -33,5 +35,6 @@ VertexOutput main(VertexInput vertexInput)
     output.uv = vertexInput.inUV;
     //output.position = float4(inPos, 1.0f);
     output.color = inColor;
+    output.normal = vertexInput.inNormal;
     return output;
 }

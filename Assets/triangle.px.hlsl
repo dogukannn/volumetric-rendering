@@ -2,6 +2,7 @@ struct PixelInput
 {
     float3 color : COLOR;
     float4 position : SV_Position;
+    float3 normal : NORMAL;
     float2 uv : TEXCOORD;
 };
 
@@ -17,12 +18,9 @@ PixelOutput main(PixelInput pixelInput)
 {
     PixelOutput output;
     output.attachment0 = g_texture.Sample(s1, pixelInput.uv);
-    return output;
-    
-    
-    //float3 inColor = pixelInput.color;
-    //PixelOutput output;
-    //output.attachment0 = float4(inColor, 1.0f);
+    //output.attachment0 = float4(1.0f, 1.0f, 1.0f, 1.0f);
+
+    //output.attachment0 = float4(pixelInput.normal + float3(0.5f), 1.0f);
     ////output.attachment0 = float4(1.0f, 1.0f, 1.0f, 1.0f);
-    //return output;
+    return output;
 }

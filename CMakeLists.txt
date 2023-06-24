@@ -31,6 +31,8 @@ add_subdirectory(${EXTERNAL_DIR}/SDL)
 add_subdirectory(${EXTERNAL_DIR}/DirectX-Headers)
 add_subdirectory(${EXTERNAL_DIR}/DirectXTK12)
 
+add_subdirectory(${EXTERNAL_DIR}/tinyobjloader)
+
 add_subdirectory(${EXTERNAL_DIR}/glm)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -43,4 +45,4 @@ file(GLOB_RECURSE SOURCES
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/pch.h)
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL2-static DirectX-Headers DirectXTK12 d3d12 dxgi dxguid glm::glm)
+target_link_libraries(${PROJECT_NAME} PRIVATE SDL2-static DirectX-Headers DirectXTK12 d3d12 dxgi dxguid glm::glm tinyobjloader)
