@@ -45,4 +45,4 @@ file(GLOB_RECURSE SOURCES
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/pch.h)
-target_link_libraries(${PROJECT_NAME} PRIVATE SDL2-static DirectX-Headers DirectXTK12 d3d12 dxgi dxguid glm::glm tinyobjloader)
+target_link_libraries(${PROJECT_NAME} PRIVATE SDL2-static DirectX-Headers DirectXTK12 d3d12 dxcompiler dxgi dxguid glm::glm tinyobjloader)

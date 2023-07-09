@@ -10,6 +10,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include "pch.h"
 #include "Mesh.h"
+#include "Shader.h"
 
 // Global variables for the window and DirectX
 SDL_Window* GWindow = nullptr;
@@ -597,19 +598,22 @@ int main(int argc, char* argv[])
 	memcpy(mappedConstantBuffer, &cbVS, sizeof(cbVS));
 	//constantBuffer->Unmap(0, &readRange3);
 
-	D3D12_SHADER_BYTECODE vsBytecode;
-	std::string compiledVSPath = "../Assets/triangle.vert.dxil";
+    VertexShader triangleVertexShader(L"../Assets/triangle.vert.hlsl");
+    PixelShader trianglePixelShader(L"../Assets/triangle.px.hlsl");
 
-	std::vector<char> vsBytecodeData = readFile(compiledVSPath);
-	vsBytecode.pShaderBytecode = vsBytecodeData.data();
-	vsBytecode.BytecodeLength = vsBytecodeData.size();
+	//D3D12_SHADER_BYTECODE vsBytecode;
+	//std::string compiledVSPath = "../Assets/triangle.vert.dxil";
 
-	D3D12_SHADER_BYTECODE psBytecode;
-	std::string compiledPSPath = "../Assets/triangle.px.dxil";
+	//std::vector<char> vsBytecodeData = readFile(compiledVSPath);
+	//vsBytecode.pShaderBytecode = vsBytecodeData.data();
+	//vsBytecode.BytecodeLength = vsBytecodeData.size();
 
-	std::vector<char> psBytecodeData = readFile(compiledPSPath);
-	psBytecode.pShaderBytecode = psBytecodeData.data();
-	psBytecode.BytecodeLength = psBytecodeData.size();
+	//D3D12_SHADER_BYTECODE psBytecode;
+	//std::string compiledPSPath = "../Assets/triangle.px.dxil";
+
+	//std::vector<char> psBytecodeData = readFile(compiledPSPath);
+	//psBytecode.pShaderBytecode = psBytecodeData.data();
+	//psBytecode.BytecodeLength = psBytecodeData.size();
 
     ID3D12PipelineState* pipelineState;
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
@@ -617,8 +621,8 @@ int main(int argc, char* argv[])
 	psoDesc.InputLayout = {Vertex::Description, _countof(Vertex::Description)};
 	psoDesc.pRootSignature = rootSignature;
 
-	psoDesc.VS = vsBytecode;
-	psoDesc.PS = psBytecode;
+	psoDesc.VS = triangleVertexShader.GetShaderByteCode();
+	psoDesc.PS = trianglePixelShader.GetShaderByteCode();
 
 	D3D12_RASTERIZER_DESC rasterDesc;
 	rasterDesc.FillMode = D3D12_FILL_MODE_SOLID;
