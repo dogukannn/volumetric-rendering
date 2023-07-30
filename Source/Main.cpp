@@ -601,24 +601,11 @@ int main(int argc, char* argv[])
     VertexShader triangleVertexShader(L"../Assets/triangle.vert.hlsl");
     PixelShader trianglePixelShader(L"../Assets/triangle.px.hlsl");
 
-	//D3D12_SHADER_BYTECODE vsBytecode;
-	//std::string compiledVSPath = "../Assets/triangle.vert.dxil";
-
-	//std::vector<char> vsBytecodeData = readFile(compiledVSPath);
-	//vsBytecode.pShaderBytecode = vsBytecodeData.data();
-	//vsBytecode.BytecodeLength = vsBytecodeData.size();
-
-	//D3D12_SHADER_BYTECODE psBytecode;
-	//std::string compiledPSPath = "../Assets/triangle.px.dxil";
-
-	//std::vector<char> psBytecodeData = readFile(compiledPSPath);
-	//psBytecode.pShaderBytecode = psBytecodeData.data();
-	//psBytecode.BytecodeLength = psBytecodeData.size();
-
     ID3D12PipelineState* pipelineState;
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 
-	psoDesc.InputLayout = {Vertex::Description, _countof(Vertex::Description)};
+	//psoDesc.InputLayout = {Vertex::Description, _countof(Vertex::Description)};
+	psoDesc.InputLayout = triangleVertexShader.InputLayoutDesc;
 	psoDesc.pRootSignature = rootSignature;
 
 	psoDesc.VS = triangleVertexShader.GetShaderByteCode();
@@ -677,13 +664,6 @@ int main(int argc, char* argv[])
 		std::cout << "Failed to create Graphics Pipeline! " << e.what();
 	}
 
-	//try
-	//{
-	//}
-	//catch (com_exception e)
-	//{
-	//	std::cout << "Failed to record commands! " << e.what();
-	//}
 
 	ID3D12GraphicsCommandList* commandList;
 	ThrowIfFailed(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,

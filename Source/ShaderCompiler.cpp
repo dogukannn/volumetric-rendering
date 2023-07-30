@@ -18,7 +18,7 @@ ShaderCompiler* ShaderCompiler::GetInstance()
     return Instance;
 }
 
-bool ShaderCompiler::CompileVertexShader(LPCWSTR shaderPath, CComPtr<ID3DBlob>& outShader, LPCWSTR shaderName) const
+bool ShaderCompiler::CompileVertexShader(LPCWSTR shaderPath, ShaderCompileOutput& outCompileResults, LPCWSTR shaderName) const
 {
     LPCWSTR args[] =
     {
@@ -28,10 +28,10 @@ bool ShaderCompiler::CompileVertexShader(LPCWSTR shaderPath, CComPtr<ID3DBlob>& 
     };
 
     CComPtr<IDxcBlobUtf16> outShaderName;
-    return CompileShader(args, _countof(args), shaderPath, shaderName, outShader, outShaderName);
+    return CompileShader(args, _countof(args), shaderPath, shaderName, outCompileResults);
 }
 
-bool ShaderCompiler::CompilePixelShader(LPCWSTR shaderPath, CComPtr<ID3DBlob>& outShader, LPCWSTR shaderName) const
+bool ShaderCompiler::CompilePixelShader(LPCWSTR shaderPath, ShaderCompileOutput& outCompileResults, LPCWSTR shaderName) const
 {
     LPCWSTR args[] =
     {
@@ -41,11 +41,10 @@ bool ShaderCompiler::CompilePixelShader(LPCWSTR shaderPath, CComPtr<ID3DBlob>& o
     };
 
     CComPtr<IDxcBlobUtf16> outShaderName;
-    return CompileShader(args, _countof(args), shaderPath, shaderName, outShader, outShaderName);
+    return CompileShader(args, _countof(args), shaderPath, shaderName, outCompileResults);
 }
 
-bool ShaderCompiler::CompileShader(LPCWSTR* args, UINT argSize, LPCWSTR shaderPath, LPCWSTR shaderName, CComPtr<ID3DBlob>& outShader,
-	CComPtr<IDxcBlobUtf16>& outShaderName) const
+bool ShaderCompiler::CompileShader(LPCWSTR* args, UINT argSize, LPCWSTR shaderPath, LPCWSTR shaderName, ShaderCompileOutput& outResults) const
 {
 	CComPtr<IDxcBlobEncoding> pSource = nullptr;
     Utils->LoadFile(shaderPath, nullptr, &pSource);
@@ -81,6 +80,16 @@ bool ShaderCompiler::CompileShader(LPCWSTR* args, UINT argSize, LPCWSTR shaderPa
         return false;
     }
 
-    results->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&outShader), &outShaderName);
+	CComPtr<IDxcBlob> reflectionBlob{};
+	ThrowIfFailed(results->GetOutput(DXC_OUT_REFLECTION, IID_PPV_ARGS(&reflectionBlob), nullptr));
+
+    DxcBuffer reflectionBuffer = {};
+    reflectionBuffer.Ptr = reflectionBlob->GetBufferPointer();
+    reflectionBuffer.Size = reflectionBlob->GetBufferSize();
+    reflectionBuffer.Encoding = 0;
+	
+	Utils->CreateReflection(&reflectionBuffer, IID_PPV_ARGS(&outResults.ShaderReflection));
+
+    results->GetOutput(DXC_OUT_OBJECT, IID_PPV_ARGS(&outResults.ShaderBlob), &outResults.ShaderName);
     return true;
 }
