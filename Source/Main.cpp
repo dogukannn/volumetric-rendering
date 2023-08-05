@@ -8,6 +8,8 @@
 #include <glm/matrix.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+#include "DynamicRootSignature.h"
 #include "pch.h"
 #include "Mesh.h"
 #include "Shader.h"
@@ -293,21 +295,6 @@ int main(int argc, char* argv[])
     ID3D12Resource* textureBuffer;
     ID3D12Resource* textureBufferUploadHeap;
 
-    D3D12_STATIC_SAMPLER_DESC sampler = {};
-    sampler.Filter = D3D12_FILTER_MIN_MAG_MIP_POINT;
-    sampler.AddressU = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.AddressV = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.AddressW = D3D12_TEXTURE_ADDRESS_MODE_BORDER;
-    sampler.MipLODBias = 0;
-    sampler.MaxAnisotropy = 0;
-    sampler.ComparisonFunc = D3D12_COMPARISON_FUNC_NEVER;
-    sampler.BorderColor = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
-    sampler.MinLOD = 0.0f;
-    sampler.MaxLOD = D3D12_FLOAT32_MAX;
-    sampler.ShaderRegister = 0;
-    sampler.RegisterSpace = 0;
-    sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-
     D3D12_RESOURCE_DESC textureDesc;
     UINT64 imageBytesPerRow;
     BYTE* imageData;
@@ -351,71 +338,6 @@ int main(int argc, char* argv[])
     ID3D12CommandList* ppCommandLists[] = {uploadCommandList};
     commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-
-    ID3D12RootSignature* rootSignature;
-
-    D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData;
-    featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
-
-    if (FAILED(device->CheckFeatureSupport(D3D12_FEATURE_ROOT_SIGNATURE, &featureData, sizeof(featureData))))
-    {
-        featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_0;
-    }
-
-	D3D12_DESCRIPTOR_RANGE1 ranges[2];
-    ranges[0].BaseShaderRegister = 0;
-    ranges[0].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_CBV;
-    ranges[0].NumDescriptors = 1;
-    ranges[0].RegisterSpace = 0;
-    ranges[0].OffsetInDescriptorsFromTableStart = 0;
-    ranges[0].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
-
-    ranges[1].BaseShaderRegister = 1;
-    ranges[1].RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    ranges[1].NumDescriptors = 1;
-    ranges[1].RegisterSpace = 0;
-    ranges[1].OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
-    ranges[1].Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
-
-
-    D3D12_ROOT_PARAMETER1 rootParameters[1];
-    rootParameters[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
-    rootParameters[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
-    rootParameters[0].DescriptorTable.NumDescriptorRanges = 2;
-    rootParameters[0].DescriptorTable.pDescriptorRanges = ranges;
-
-    D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
-    rootSignatureDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
-    rootSignatureDesc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-    rootSignatureDesc.Desc_1_1.NumParameters = 1;
-    rootSignatureDesc.Desc_1_1.pParameters = rootParameters;
-    rootSignatureDesc.Desc_1_1.NumStaticSamplers = 1;
-    rootSignatureDesc.Desc_1_1.pStaticSamplers = &sampler;
-
-    ID3DBlob* signature;
-    ID3DBlob* error;
-
-    try
-    {
-        ThrowIfFailed(D3D12SerializeVersionedRootSignature(&rootSignatureDesc, &signature, &error));
-        ThrowIfFailed(
-            device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
-        rootSignature->SetName(L"Hello Triangle Root Signature");
-    }
-    catch (std::exception e)
-    {
-        const char* errStr = (const char*)error->GetBufferPointer();
-        std::cout << errStr;
-        error->Release();
-        error = nullptr;
-    }
-
-    if(signature)
-    {
-        signature->Release();
-        signature = nullptr;
-    }
-    
     // Vertex data for the triangle
     Vertex vertexBufferData[3] =
     {
@@ -600,13 +522,15 @@ int main(int argc, char* argv[])
 
     VertexShader triangleVertexShader(L"../Assets/triangle.vert.hlsl");
     PixelShader trianglePixelShader(L"../Assets/triangle.px.hlsl");
+    DynamicRootSignature triangleRootSignature;
+    triangleRootSignature.Initialize(device, triangleVertexShader, trianglePixelShader);
 
     ID3D12PipelineState* pipelineState;
     D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
 
 	//psoDesc.InputLayout = {Vertex::Description, _countof(Vertex::Description)};
 	psoDesc.InputLayout = triangleVertexShader.InputLayoutDesc;
-	psoDesc.pRootSignature = rootSignature;
+	psoDesc.pRootSignature = triangleRootSignature.rootSignature;
 
 	psoDesc.VS = triangleVertexShader.GetShaderByteCode();
 	psoDesc.PS = trianglePixelShader.GetShaderByteCode();
@@ -747,7 +671,7 @@ int main(int argc, char* argv[])
 
 		ThrowIfFailed(commandList->Reset(commandAllocator, pipelineState));
 
-		commandList->SetGraphicsRootSignature(rootSignature);
+		commandList->SetGraphicsRootSignature(triangleRootSignature.rootSignature);
 
 		ID3D12DescriptorHeap* pDescriptorHeaps[] = {mainDescriptorHeap};
 		commandList->SetDescriptorHeaps(_countof(pDescriptorHeaps), pDescriptorHeaps);
