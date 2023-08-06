@@ -3,6 +3,21 @@
 
 #include "ShaderCompiler.h"
 
+struct DescriptorTableIndexed
+{
+	uint32_t Index;
+	std::vector<D3D12_DESCRIPTOR_RANGE1> DescriptorRanges;
+	std::map<std::string, std::uint32_t> IndexMap;
+};
+
+struct ShaderParameters
+{
+	std::vector<D3D12_ROOT_PARAMETER1> RootParameters;
+
+	std::map<std::string, uint32_t> FreeParameterIndexMap;
+	std::map<std::string, DescriptorTableIndexed> DescriptorTableIndexMap;
+};
+
 class Shader
 {
 protected:
@@ -13,9 +28,7 @@ public:
 	CComPtr<ID3DBlob> ShaderBlob;
 	D3D12_SHADER_BYTECODE GetShaderByteCode();
 
-	std::vector<D3D12_DESCRIPTOR_RANGE1> textureDescRanges;
-	std::map<std::string, uint32_t> rootParameterIndexMap;
-	std::vector<D3D12_ROOT_PARAMETER1> rootParameters;
+	ShaderParameters Parameters;
 };
 
 class VertexShader : public Shader

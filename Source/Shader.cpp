@@ -21,7 +21,7 @@ void Shader::Reflect(ShaderCompileOutput shaderData, D3D12_SHADER_VISIBILITY sha
 
 		if(shaderInputBindDesc.Type == D3D_SIT_CBUFFER)
 		{
-			rootParameterIndexMap[shaderInputBindDesc.Name] = static_cast<uint32_t>(rootParameterIndexMap.size());
+			Parameters.FreeParameterIndexMap[shaderInputBindDesc.Name] = static_cast<uint32_t>(Parameters.RootParameters.size());
 			ID3D12ShaderReflectionConstantBuffer* shaderReflectionConstantBuffer = shaderData.ShaderReflection->GetConstantBufferByIndex(i);
 			D3D12_SHADER_BUFFER_DESC constantBufferDesc = {};
 			shaderReflectionConstantBuffer->GetDesc(&constantBufferDesc);
@@ -37,7 +37,7 @@ void Shader::Reflect(ShaderCompileOutput shaderData, D3D12_SHADER_VISIBILITY sha
 
 			rootParameter.Descriptor = rootDescriptor;
 
-			rootParameters.push_back(rootParameter);
+			Parameters.RootParameters.push_back(rootParameter);
 		}
 
 		if (shaderInputBindDesc.Type == D3D_SIT_TEXTURE)
@@ -50,6 +50,7 @@ void Shader::Reflect(ShaderCompileOutput shaderData, D3D12_SHADER_VISIBILITY sha
 
 	std::sort(textureBindingIndices.begin(), textureBindingIndices.end());
 
+	DescriptorTableIndexed textureDescriptorTable;
 	struct BindRange
 	{
 		uint32_t BindPointStart;
@@ -66,7 +67,7 @@ void Shader::Reflect(ShaderCompileOutput shaderData, D3D12_SHADER_VISIBILITY sha
 			newRange = false;
 
 		lastBindPoint = { shaderInputBindDesc.BindPoint, shaderInputBindDesc.BindCount };
-
+		textureDescriptorTable.IndexMap[shaderInputBindDesc.Name] = static_cast<uint32_t>(textureDescriptorTable.IndexMap.size());
 		if(newRange)
 		{
 			D3D12_DESCRIPTOR_RANGE1 range = {};
@@ -76,25 +77,26 @@ void Shader::Reflect(ShaderCompileOutput shaderData, D3D12_SHADER_VISIBILITY sha
 			range.RegisterSpace = shaderInputBindDesc.Space; //not supporting multiple register spaces for now
 			range.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
 			range.Flags = D3D12_DESCRIPTOR_RANGE_FLAG_NONE;
-			textureDescRanges.push_back(range);
+			textureDescriptorTable.DescriptorRanges.push_back(range);
 		}
 		else
 		{
-			uint32_t rangeIndex = textureDescRanges.size() - 1;
-			textureDescRanges[rangeIndex].NumDescriptors += shaderInputBindDesc.BindCount;
+			uint32_t rangeIndex = textureDescriptorTable.DescriptorRanges.size() - 1;
+			textureDescriptorTable.DescriptorRanges[rangeIndex].NumDescriptors += shaderInputBindDesc.BindCount;
 		}
 	}
 
-	if(!textureDescRanges.empty())
+	if(!textureDescriptorTable.DescriptorRanges.empty())
 	{
 		D3D12_ROOT_PARAMETER1 textureDescTableParameter = {};
 		textureDescTableParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 		textureDescTableParameter.ShaderVisibility = shaderVisibility;
-		textureDescTableParameter.DescriptorTable.NumDescriptorRanges = textureDescRanges.size();
-		textureDescTableParameter.DescriptorTable.pDescriptorRanges = textureDescRanges.data();
+		textureDescTableParameter.DescriptorTable.NumDescriptorRanges = textureDescriptorTable.DescriptorRanges.size();
+		textureDescTableParameter.DescriptorTable.pDescriptorRanges = textureDescriptorTable.DescriptorRanges.data();
 
-		rootParameterIndexMap["Textures"] = static_cast<uint32_t>(rootParameterIndexMap.size());
-		rootParameters.push_back(textureDescTableParameter);
+		textureDescriptorTable.Index = static_cast<uint32_t>(Parameters.RootParameters.size());
+		Parameters.DescriptorTableIndexMap["Textures"] = textureDescriptorTable;
+		Parameters.RootParameters.push_back(textureDescTableParameter);
 	}
 }
 
