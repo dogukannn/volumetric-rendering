@@ -91,11 +91,13 @@ void Shader::Reflect(ShaderCompileOutput shaderData, D3D12_SHADER_VISIBILITY sha
 		D3D12_ROOT_PARAMETER1 textureDescTableParameter = {};
 		textureDescTableParameter.ParameterType = D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;
 		textureDescTableParameter.ShaderVisibility = shaderVisibility;
-		textureDescTableParameter.DescriptorTable.NumDescriptorRanges = textureDescriptorTable.DescriptorRanges.size();
-		textureDescTableParameter.DescriptorTable.pDescriptorRanges = textureDescriptorTable.DescriptorRanges.data();
+		//textureDescTableParameter.DescriptorTable.NumDescriptorRanges = textureDescriptorTable.DescriptorRanges.size();
+		//textureDescTableParameter.DescriptorTable.pDescriptorRanges = textureDescriptorTable.DescriptorRanges.data();
 
 		textureDescriptorTable.Index = static_cast<uint32_t>(Parameters.RootParameters.size());
 		Parameters.DescriptorTableIndexMap["Textures"] = textureDescriptorTable;
+		textureDescTableParameter.DescriptorTable.NumDescriptorRanges = Parameters.DescriptorTableIndexMap["Textures"].DescriptorRanges.size();
+		textureDescTableParameter.DescriptorTable.pDescriptorRanges = Parameters.DescriptorTableIndexMap["Textures"].DescriptorRanges.data();
 		Parameters.RootParameters.push_back(textureDescTableParameter);
 	}
 }

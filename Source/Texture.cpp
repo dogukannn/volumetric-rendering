@@ -22,6 +22,7 @@ void Texture::LoadFromFile(ID3D12Device* device, ID3D12CommandQueue* commandQueu
 
 	Width = Resource->GetDesc().Width;
 	Height = Resource->GetDesc().Height;
+    Format = Resource->GetDesc().Format;
 }
 
 int LoadImageDataFromFile(BYTE** imageData, D3D12_RESOURCE_DESC& resourceDescription, LPCWSTR filename, UINT64& bytesPerRow)

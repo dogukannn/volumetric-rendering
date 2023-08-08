@@ -6,7 +6,7 @@ DynamicRootSignature::DynamicRootSignature()
 {
 }
 
-bool DynamicRootSignature::Initialize(ID3D12Device* device, VertexShader& vertexShader, PixelShader& pixelShader)
+bool DynamicRootSignature::Initialize(ID3D12Device* device, VertexShader* vertexShader, PixelShader* pixelShader)
 {
     D3D12_FEATURE_DATA_ROOT_SIGNATURE featureData;
     featureData.HighestVersion = D3D_ROOT_SIGNATURE_VERSION_1_1;
@@ -31,20 +31,48 @@ bool DynamicRootSignature::Initialize(ID3D12Device* device, VertexShader& vertex
     sampler.RegisterSpace = 0;
     sampler.ShaderVisibility = D3D12_SHADER_VISIBILITY_ALL;
 
-    rootParameters = vertexShader.rootParameters;
-    rootParameters.insert(rootParameters.end(), pixelShader.rootParameters.begin(), pixelShader.rootParameters.end());
 
-    VertexParameterIndex = vertexShader.rootParameterIndexMap;
-    PixelParameterIndex = pixelShader.rootParameterIndexMap;
+    for (auto& [name, idx]: vertexShader->Parameters.FreeParameterIndexMap)
+	{
+        auto rootParam = vertexShader->Parameters.RootParameters[idx];
+        Parameters.RootParameters.push_back(rootParam);
+        Parameters.FreeParameterIndexMap[name] = Parameters.RootParameters.size() - 1;
+	}
 
-    for (auto& [_, idx] : PixelParameterIndex)
-        idx += vertexShader.rootParameters.size();
+    for (auto& [name, descTable]: vertexShader->Parameters.DescriptorTableIndexMap)
+	{
+        auto rootParam = vertexShader->Parameters.RootParameters[descTable.Index];
+        DescriptorTableIndexed newDescTable = descTable;
+        rootParam.DescriptorTable.pDescriptorRanges = newDescTable.DescriptorRanges.data();
+        rootParam.DescriptorTable.NumDescriptorRanges = newDescTable.DescriptorRanges.size();
+        Parameters.RootParameters.push_back(rootParam);
+        newDescTable.Index = Parameters.RootParameters.size() - 1;
+        Parameters.DescriptorTableIndexMap[name] = newDescTable;
+	}
+
+    for (auto& [name, idx]: pixelShader->Parameters.FreeParameterIndexMap)
+	{
+        auto rootParam = pixelShader->Parameters.RootParameters[idx];
+        Parameters.RootParameters.push_back(rootParam);
+        Parameters.FreeParameterIndexMap[name] = Parameters.RootParameters.size() - 1;
+	}
+
+    for (auto& [name, descTable]: pixelShader->Parameters.DescriptorTableIndexMap)
+	{
+        auto rootParam = pixelShader->Parameters.RootParameters[descTable.Index];
+        DescriptorTableIndexed newDescTable = descTable;
+        Parameters.DescriptorTableIndexMap[name] = newDescTable;
+        rootParam.DescriptorTable.pDescriptorRanges = Parameters.DescriptorTableIndexMap[name].DescriptorRanges.data();
+        rootParam.DescriptorTable.NumDescriptorRanges = Parameters.DescriptorTableIndexMap[name].DescriptorRanges.size();
+        Parameters.RootParameters.push_back(rootParam);
+        Parameters.DescriptorTableIndexMap[name].Index = Parameters.RootParameters.size() - 1;
+	}
 
     D3D12_VERSIONED_ROOT_SIGNATURE_DESC rootSignatureDesc;
     rootSignatureDesc.Version = D3D_ROOT_SIGNATURE_VERSION_1_1;
     rootSignatureDesc.Desc_1_1.Flags = D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT;
-    rootSignatureDesc.Desc_1_1.NumParameters = rootParameters.size();
-    rootSignatureDesc.Desc_1_1.pParameters = rootParameters.data();
+    rootSignatureDesc.Desc_1_1.NumParameters = Parameters.RootParameters.size();
+    rootSignatureDesc.Desc_1_1.pParameters = Parameters.RootParameters.data();
     rootSignatureDesc.Desc_1_1.NumStaticSamplers = 1;
     rootSignatureDesc.Desc_1_1.pStaticSamplers = &sampler;
 
