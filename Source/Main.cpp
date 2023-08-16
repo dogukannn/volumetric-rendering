@@ -50,6 +50,35 @@ bool InitializeWindow(int width, int height)
 	return true;
 }
 
+void CopyTexturePlain(ID3D12GraphicsCommandList* commandList, D3D12_RESOURCE_STATES dstState, ID3D12Resource* dstTexture, D3D12_RESOURCE_STATES srcState, ID3D12Resource* srcTexture)
+{
+	commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(srcTexture, srcState, D3D12_RESOURCE_STATE_COPY_SOURCE));
+	commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(dstTexture, dstState, D3D12_RESOURCE_STATE_COPY_DEST));
+
+	D3D12_BOX box;
+	box.right = dstTexture->GetDesc().Width;
+	box.bottom = dstTexture->GetDesc().Height;
+	box.back = 1;
+	box.front = 0;
+	box.left = 0;
+	box.top = 0;
+
+	D3D12_TEXTURE_COPY_LOCATION destLoc = {};
+	destLoc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	destLoc.pResource = dstTexture;
+	destLoc.SubresourceIndex = 0;
+
+	D3D12_TEXTURE_COPY_LOCATION srcLoc = {};
+	srcLoc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+	srcLoc.pResource = srcTexture;
+	srcLoc.SubresourceIndex = 0;
+
+	commandList->CopyTextureRegion(&destLoc, 0, 0, 0, &srcLoc, &box);
+
+	commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(srcTexture, D3D12_RESOURCE_STATE_COPY_SOURCE, srcState));
+	commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(dstTexture, D3D12_RESOURCE_STATE_COPY_DEST, dstState));
+}
+
 inline std::vector<char> readFile(const std::string& filename)
 {
     std::ifstream file(filename, std::ios::ate | std::ios::binary);
@@ -140,10 +169,6 @@ int main(int argc, char* argv[])
 	{
 		ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
 	}
-    //ID3D12GraphicsCommandList* commandList;
-    //D3D12_RESOURCE_BARRIER barrier = {};
-    //barrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-    //barrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
 
     static const UINT backbufferCount = 2;
     UINT currentBuffer;
@@ -199,6 +224,54 @@ int main(int argc, char* argv[])
         rtvHandle.ptr += (1 * rtvDescriptorSize);
     }
 
+    ID3D12DescriptorHeap* sideRenderTargetViewHeap;
+    ID3D12Resource* sideRenderTargets[backbufferCount];
+
+    CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
+
+    D3D12_RESOURCE_DESC sideRTDesc = CD3DX12_RESOURCE_DESC::Tex2D(
+				DXGI_FORMAT_R32_FLOAT,
+				windowWidth,
+				windowHeight,
+				1,
+				1,
+				1);
+    sideRTDesc.Flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+
+    D3D12_CLEAR_VALUE sideRTClearValue = {};
+    sideRTClearValue.Format = DXGI_FORMAT_R32_FLOAT;
+    sideRTClearValue.Color[0] = 0.0f;
+
+    for(int i = 0; i < backbufferCount; i++)
+    {
+		ThrowIfFailed(device->CreateCommittedResource(
+			&heapProps,
+			D3D12_HEAP_FLAG_NONE,
+			&sideRTDesc,
+			D3D12_RESOURCE_STATE_RENDER_TARGET,
+			&sideRTClearValue,
+			IID_PPV_ARGS(&sideRenderTargets[i])
+		));
+		sideRenderTargets[i]->SetName(L"back depth write targets");
+    }
+
+    D3D12_DESCRIPTOR_HEAP_DESC sideRtvHeapDesc = {};
+    sideRtvHeapDesc.NumDescriptors = backbufferCount;
+    sideRtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    sideRtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
+    ThrowIfFailed(device->CreateDescriptorHeap(&sideRtvHeapDesc, IID_PPV_ARGS(&sideRenderTargetViewHeap)));
+
+    rtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
+
+    D3D12_CPU_DESCRIPTOR_HANDLE sideRtvHandle(sideRenderTargetViewHeap->GetCPUDescriptorHandleForHeapStart());
+
+    for (UINT n = 0; n < backbufferCount; n++)
+    {
+        device->CreateRenderTargetView(sideRenderTargets[n], nullptr, sideRtvHandle);
+        sideRtvHandle.ptr += (1 * rtvDescriptorSize);
+    }
+
+    
 	//create depth stencil
     ID3D12Resource* depthStencilBuffer;
     ID3D12DescriptorHeap* dsDescriptorHeap;
@@ -241,119 +314,85 @@ int main(int argc, char* argv[])
     };
 
     Mesh mesh;
-    mesh.loadFromObj("../Assets/lost_empire.obj");
+    mesh.loadFromObj(device, "../Assets/graveyard.obj");
 
-    ID3D12Resource* vertexBuffer;
-    D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+    Mesh cubeMesh;
+    cubeMesh.loadFromObj(device, "../Assets/cube.obj");
 
-    const UINT vertexBufferSize = mesh._vertices.size() * sizeof(Vertex);
+	//uint32_t indexBufferData[3] = {0, 1, 2};
 
-    D3D12_HEAP_PROPERTIES heapProps;
-    heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
-    heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-    heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-    heapProps.CreationNodeMask = 1;
-    heapProps.VisibleNodeMask = 1;
+	//ID3D12Resource* indexBuffer;
+	//D3D12_INDEX_BUFFER_VIEW indexBufferView;
 
-    D3D12_RESOURCE_DESC vertexBufferResourceDesc;
-    vertexBufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-    vertexBufferResourceDesc.Alignment = 0;
-    vertexBufferResourceDesc.Width = vertexBufferSize;
-    vertexBufferResourceDesc.Height = 1;
-    vertexBufferResourceDesc.DepthOrArraySize = 1;
-    vertexBufferResourceDesc.MipLevels = 1;
-    vertexBufferResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
-    vertexBufferResourceDesc.SampleDesc.Count = 1;
-    vertexBufferResourceDesc.SampleDesc.Quality = 0;
-    vertexBufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-    vertexBufferResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+	//const UINT indexBufferSize = sizeof(indexBufferData);
 
-    ThrowIfFailed(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &vertexBufferResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&vertexBuffer)));
+	//heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+	//heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+	//heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+	//heapProps.CreationNodeMask = 1;
+	//heapProps.VisibleNodeMask = 1;
 
-    UINT8* pVertexDataBegin;
+	//vertexBufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+	//vertexBufferResourceDesc.Alignment = 0;
+	//vertexBufferResourceDesc.Width = indexBufferSize;
+	//vertexBufferResourceDesc.Height = 1;
+	//vertexBufferResourceDesc.DepthOrArraySize = 1;
+	//vertexBufferResourceDesc.MipLevels = 1;
+	//vertexBufferResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+	//vertexBufferResourceDesc.SampleDesc.Count = 1;
+	//vertexBufferResourceDesc.SampleDesc.Quality = 0;
+	//vertexBufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+	//vertexBufferResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-    D3D12_RANGE readRange;
-    readRange.Begin = 0;
-    readRange.End = 0;
+	//ThrowIfFailed(device->CreateCommittedResource(
+ //   &heapProps, D3D12_HEAP_FLAG_NONE, &vertexBufferResourceDesc,
+ //   D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&indexBuffer)));
 
-    ThrowIfFailed(vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
-    memcpy(pVertexDataBegin, mesh._vertices.data(), vertexBufferSize);
-    vertexBuffer->Unmap(0, nullptr);
+	//UINT8* pIndexDataBegin;
 
-    vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
-    vertexBufferView.StrideInBytes = sizeof(Vertex);
-    vertexBufferView.SizeInBytes = vertexBufferSize;
+	//D3D12_RANGE indexReadRange;
+	//indexReadRange.Begin = 0;
+	//indexReadRange.End = 0;
 
+	//ThrowIfFailed(indexBuffer->Map(0, &indexReadRange,
+	//							   reinterpret_cast<void**>(&pIndexDataBegin)));
+	//memcpy(pIndexDataBegin, indexBufferData, sizeof(indexBufferData));
+	//indexBuffer->Unmap(0, nullptr);
 
-	uint32_t indexBufferData[3] = {0, 1, 2};
+	//indexBufferView.BufferLocation = indexBuffer->GetGPUVirtualAddress();
+	//indexBufferView.Format = DXGI_FORMAT_R32_UINT;
+	//indexBufferView.SizeInBytes = indexBufferSize;
 
-	ID3D12Resource* indexBuffer;
-	D3D12_INDEX_BUFFER_VIEW indexBufferView;
-
-	const UINT indexBufferSize = sizeof(indexBufferData);
-
-	heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
-	heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-	heapProps.CreationNodeMask = 1;
-	heapProps.VisibleNodeMask = 1;
-
-	vertexBufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	vertexBufferResourceDesc.Alignment = 0;
-	vertexBufferResourceDesc.Width = indexBufferSize;
-	vertexBufferResourceDesc.Height = 1;
-	vertexBufferResourceDesc.DepthOrArraySize = 1;
-	vertexBufferResourceDesc.MipLevels = 1;
-	vertexBufferResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
-	vertexBufferResourceDesc.SampleDesc.Count = 1;
-	vertexBufferResourceDesc.SampleDesc.Quality = 0;
-	vertexBufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	vertexBufferResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-	ThrowIfFailed(device->CreateCommittedResource(
-    &heapProps, D3D12_HEAP_FLAG_NONE, &vertexBufferResourceDesc,
-    D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&indexBuffer)));
-
-	UINT8* pIndexDataBegin;
-
-	D3D12_RANGE indexReadRange;
-	indexReadRange.Begin = 0;
-	indexReadRange.End = 0;
-
-	ThrowIfFailed(indexBuffer->Map(0, &indexReadRange,
-								   reinterpret_cast<void**>(&pIndexDataBegin)));
-	memcpy(pIndexDataBegin, indexBufferData, sizeof(indexBufferData));
-	indexBuffer->Unmap(0, nullptr);
-
-	indexBufferView.BufferLocation = indexBuffer->GetGPUVirtualAddress();
-	indexBufferView.Format = DXGI_FORMAT_R32_UINT;
-	indexBufferView.SizeInBytes = indexBufferSize;
-
-	struct
+	struct mvp
 	{
 		glm::mat4 projectionMatrix;
 		glm::mat4 modelMatrix;
 		glm::mat4 viewMatrix;
 	} cbVS;
 
-    cbVS.projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 0.01f, 1000.f);
+    cbVS.projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
     glm::vec3 eye(25.2203f, 44.637f, -12.9169f);
     glm::vec3 eye_dir(-0.409304f, -0.27564f, 0.896766f);
     glm::vec3 up(0.f, 1.f, 0.f);
     cbVS.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
     cbVS.modelMatrix = glm::mat4(1.f);
 
-
-    //pipeline->init(vertexshader, pixelshader);
-    //pipeline->bindtexture("atlas", textureBuffer);
-    //pipeline->bindcb("cb", constantBuffer);
-    //texture object
-    //cb object
     VertexShader triangleVertexShader(L"../Assets/triangle.vert.hlsl");
     PixelShader trianglePixelShader(L"../Assets/triangle.px.hlsl");
+    PixelShader depthPixelShader(L"../Assets/depth_save.px.hlsl");
 
 	Pipeline pipeline;
 	pipeline.Initialize(device, &triangleVertexShader, &trianglePixelShader);
+
+	Pipeline depthBackPipeline;
+    depthBackPipeline.CullMode = D3D12_CULL_MODE_BACK;
+    depthBackPipeline.writeDepth = false;
+	depthBackPipeline.Initialize(device, &triangleVertexShader, &depthPixelShader);
+
+	Pipeline depthFrontPipeline;
+    depthFrontPipeline.CullMode = D3D12_CULL_MODE_BACK;
+    depthFrontPipeline.writeDepth = false;
+	depthFrontPipeline.Initialize(device, &triangleVertexShader, &depthPixelShader);
 
     ConstantBuffer sceneBuffer;
     sceneBuffer.Initialize(device, sizeof(cbVS));
@@ -363,7 +402,7 @@ int main(int argc, char* argv[])
     texture.LoadFromFile(device, commandQueue, L"../Assets/lost_empire-RGBA.png");
 
     pipeline.BindTexture(device, "g_texture", &texture);
-    pipeline.BindConstantBuffer("cb", &sceneBuffer);
+    //pipeline.BindConstantBuffer("cb", &sceneBuffer, TODO);
 
 	ID3D12GraphicsCommandList* commandList;
 	ThrowIfFailed(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -375,6 +414,16 @@ int main(int argc, char* argv[])
 	memcpy(sceneBufferMapped, &cbVS, sizeof(cbVS));
 
 
+    ConstantBuffer cubeBuffer;
+    cubeBuffer.Initialize(device, sizeof(mvp));
+    UINT8* cubeBufferMapped = cubeBuffer.Map();
+    mvp CubeMvp;
+    CubeMvp.projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
+    CubeMvp.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
+    CubeMvp.modelMatrix = glm::scale(glm::mat4(1.f),glm::vec3(4.f));
+	memcpy(cubeBufferMapped, &CubeMvp, sizeof(mvp));
+
+
 	frameIndex = swapchain->GetCurrentBackBufferIndex();
     SDL_Event event;
     bool quit = false;
@@ -383,6 +432,8 @@ int main(int argc, char* argv[])
     static const glm::vec3 forward(0.f,0.f,1.f);
     static const glm::vec3 right(-1.f,0.f,0.f);
     bool captureDir = false;
+    eye = glm::vec3(8.0f, 0.0f, 0.0f);
+    eye_dir = glm::vec3(-1.0f, 0.0f, 0.0f);
     while (!quit)
     {
         while (SDL_PollEvent(&event))
@@ -438,15 +489,20 @@ int main(int argc, char* argv[])
 
         
 		cbVS.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
+		CubeMvp.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
 
+		//std::cerr << "\r" << static_cast<int>((static_cast<double>(imageHeight - j) / imageHeight) * 100.0) << "% of file write is completed         " << std::flush;
         //std::cout << "eye " << eye.x << " " << eye.y << " " << eye.z << std::endl;
         //std::cout << "eye dir " << eye_dir.x << " " << eye_dir.y << " " << eye_dir.z << std::endl;
         //std::cout << "up " << up.x << " " << up.y << " " << up.z << std::endl;
         //std::cout << "==========================================================" << std::endl;
 		//cbVS.modelMatrix = glm::rotate(cbVS.modelMatrix, glm::radians(1.0f), glm::vec3(0.f, 1.f, 0.f));
 		memcpy(sceneBufferMapped, &cbVS, sizeof(cbVS));
+		memcpy(cubeBufferMapped, &CubeMvp, sizeof(mvp));
 
 		ThrowIfFailed(commandAllocator->Reset());
+
+		ThrowIfFailed(commandList->Reset(commandAllocator, nullptr));
 
         pipeline.SetPipelineState(commandAllocator, commandList);
 
@@ -477,9 +533,28 @@ int main(int argc, char* argv[])
 		commandList->RSSetScissorRects(1, &surfaceSize);
 		commandList->ClearRenderTargetView(rtvHandle2, clearColor, 0, nullptr);
 		commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-		commandList->IASetVertexBuffers(0, 1, &vertexBufferView);
+		pipeline.BindConstantBuffer("cb", &sceneBuffer, commandList);
+		commandList->IASetVertexBuffers(0, 1, &mesh.vertexBufferView);
 		//commandList->IASetIndexBuffer(&indexBufferView);
         commandList->DrawInstanced(mesh._vertices.size(), 1, 0, 0);
+
+
+		D3D12_CPU_DESCRIPTOR_HANDLE
+			rtvHandle3(sideRenderTargetViewHeap->GetCPUDescriptorHandleForHeapStart());
+		rtvHandle3.ptr = rtvHandle3.ptr + (frameIndex * rtvDescriptorSize);
+
+		const float clearColorx[] = {0.0f, 0.0f, 0.0f, 0.0f};
+		commandList->ClearRenderTargetView(rtvHandle3, clearColorx, 0, nullptr);
+        
+        CopyTexturePlain(commandList, D3D12_RESOURCE_STATE_RENDER_TARGET, sideRenderTargets[frameIndex], D3D12_RESOURCE_STATE_DEPTH_WRITE, depthStencilBuffer);
+
+        commandList->OMSetRenderTargets(1, &rtvHandle3, FALSE, &dsvHandle);
+
+        depthBackPipeline.SetPipelineState(commandAllocator, commandList);
+    	depthBackPipeline.BindConstantBuffer("cb", &cubeBuffer, commandList);
+		commandList->IASetVertexBuffers(0, 1, &cubeMesh.vertexBufferView);
+		//commandList->IASetIndexBuffer(&indexBufferView);
+        commandList->DrawInstanced(cubeMesh._vertices.size(), 1, 0, 0);
 
 		//commandList->DrawIndexedInstanced(3, 1, 0, 0, 0);
 

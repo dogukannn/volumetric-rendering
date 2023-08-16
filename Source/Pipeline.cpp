@@ -26,13 +26,16 @@ void Pipeline::Initialize(ID3D12Device* device, VertexShader* vertexShader, Pixe
 		}
 	}
 
-	D3D12_DESCRIPTOR_HEAP_DESC descHeapDesc = {};
-	descHeapDesc.NumDescriptors = totalDescriptorCount;
-	descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-	descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	ThrowIfFailed(device->CreateDescriptorHeap(&descHeapDesc,
-											   IID_PPV_ARGS(&DescriptorHeap)));
-	DescriptorHeap->SetName(L"Descriptor Heap For CBV + SRV");
+	if(totalDescriptorCount > 0)
+	{
+		D3D12_DESCRIPTOR_HEAP_DESC descHeapDesc = {};
+		descHeapDesc.NumDescriptors = totalDescriptorCount;
+		descHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+		descHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+		ThrowIfFailed(device->CreateDescriptorHeap(&descHeapDesc,
+												   IID_PPV_ARGS(&DescriptorHeap)));
+		DescriptorHeap->SetName(L"Descriptor Heap For CBV + SRV");
+	}
 
 
 	D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
@@ -46,7 +49,7 @@ void Pipeline::Initialize(ID3D12Device* device, VertexShader* vertexShader, Pixe
 
 	D3D12_RASTERIZER_DESC rasterDesc;
 	rasterDesc.FillMode = D3D12_FILL_MODE_SOLID;
-	rasterDesc.CullMode = D3D12_CULL_MODE_NONE;
+	rasterDesc.CullMode = CullMode;
 	rasterDesc.FrontCounterClockwise = FALSE;
 	rasterDesc.DepthBias = D3D12_DEFAULT_DEPTH_BIAS;
 	rasterDesc.DepthBiasClamp = D3D12_DEFAULT_DEPTH_BIAS_CLAMP;
@@ -80,11 +83,18 @@ void Pipeline::Initialize(ID3D12Device* device, VertexShader* vertexShader, Pixe
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
     //psoDesc.DepthStencilState.DepthEnable = FALSE;
 	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
+	if(!writeDepth)
+	{
+		psoDesc.DepthStencilState.DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ZERO;
+	}
     psoDesc.DSVFormat = DXGI_FORMAT_D32_FLOAT;
 	psoDesc.SampleMask = UINT_MAX;
 
 	psoDesc.NumRenderTargets = 1;
-	psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+	if(!writeDepth)
+		psoDesc.RTVFormats[0] = DXGI_FORMAT_R32_FLOAT;
+	else
+		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 	psoDesc.SampleDesc.Count = 1;
 
 	try
@@ -101,20 +111,20 @@ void Pipeline::Initialize(ID3D12Device* device, VertexShader* vertexShader, Pixe
 
 void Pipeline::SetPipelineState(ID3D12CommandAllocator* commandAllocator, ID3D12GraphicsCommandList* commandList)
 {
-	ThrowIfFailed(commandList->Reset(commandAllocator, PipelineState));
+	//ThrowIfFailed(commandList->Reset(commandAllocator, PipelineState));
+
+	commandList->SetPipelineState(PipelineState);
 
 	commandList->SetGraphicsRootSignature(RootSignature->rootSignature);
+
+	if (!DescriptorHeap)
+		return;
 
 	ID3D12DescriptorHeap* pDescriptorHeaps[] = {DescriptorHeap};
 	commandList->SetDescriptorHeaps(_countof(pDescriptorHeaps), pDescriptorHeaps);
 
 	D3D12_GPU_DESCRIPTOR_HANDLE descriptorHandle(DescriptorHeap->GetGPUDescriptorHandleForHeapStart());
 	commandList->SetGraphicsRootDescriptorTable(1, descriptorHandle);
-
-	for(auto [idx, address] :  ConstantBufferAddresses)
-	{
-		commandList->SetGraphicsRootConstantBufferView(idx, address);
-	}
 }
 
 void Pipeline::BindTexture(ID3D12Device* device, std::string name, class Texture* texture)
@@ -138,7 +148,7 @@ void Pipeline::BindTexture(ID3D12Device* device, std::string name, class Texture
 	device->CreateShaderResourceView(texture->Resource, &srvDesc, srvHandle);
 }
 
-void Pipeline::BindConstantBuffer(std::string name, ConstantBuffer* constantBuffer)
+void Pipeline::BindConstantBuffer(std::string name, ConstantBuffer* constantBuffer, ID3D12GraphicsCommandList* commandList)
 {
 	if(RootSignature->Parameters.FreeParameterIndexMap.count(name) <= 0)
 	{
@@ -146,5 +156,7 @@ void Pipeline::BindConstantBuffer(std::string name, ConstantBuffer* constantBuff
 	}
 
 	auto index = RootSignature->Parameters.FreeParameterIndexMap[name];
-	ConstantBufferAddresses[index] = constantBuffer->Resource->GetGPUVirtualAddress();
+	//ConstantBufferAddresses[index] = constantBuffer->Resource->GetGPUVirtualAddress();
+
+	commandList->SetGraphicsRootConstantBufferView(index, constantBuffer->Resource->GetGPUVirtualAddress());
 }

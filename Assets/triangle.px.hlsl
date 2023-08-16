@@ -17,7 +17,8 @@ SamplerState s1 : register(s0);
 PixelOutput main(PixelInput pixelInput)
 {
     PixelOutput output;
-    output.attachment0 = g_texture.Sample(s1, pixelInput.uv);
+    output.attachment0 = g_texture.Sample(s1, pixelInput.uv) * 0.00001;
+    output.attachment0 += float4(pixelInput.color, 1.0);
     //output.attachment0 = float4(1.0f, 1.0f, 1.0f, 1.0f);
 
     //output.attachment0 = float4(pixelInput.normal + float3(0.5f), 1.0f);

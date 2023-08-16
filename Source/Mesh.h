@@ -29,5 +29,8 @@ struct Mesh
 {
 	std::vector<Vertex> _vertices;
 
-	bool loadFromObj(const char* filename);
+    ID3D12Resource* vertexBuffer;
+    D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+
+	bool loadFromObj(ID3D12Device* device, const char* filename);
 };
