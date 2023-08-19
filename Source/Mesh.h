@@ -33,4 +33,5 @@ struct Mesh
     D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
 
 	bool loadFromObj(ID3D12Device* device, const char* filename);
+	bool loadFromVertices(ID3D12Device* device, std::vector<Vertex>& vertices);
 };

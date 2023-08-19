@@ -5,6 +5,8 @@
 #include <SDL_syswm.h>
 #include <fstream>
 #include <vector>
+
+#define GLM_DEPTH_ZERO_TO_ONE
 #include <glm/matrix.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -225,7 +227,8 @@ int main(int argc, char* argv[])
     }
 
     ID3D12DescriptorHeap* sideRenderTargetViewHeap;
-    ID3D12Resource* sideRenderTargets[backbufferCount];
+    ID3D12Resource* backDepthRenderTargets[backbufferCount];
+    ID3D12Resource* frontDepthRenderTargets[backbufferCount];
 
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_DEFAULT);
 
@@ -250,13 +253,23 @@ int main(int argc, char* argv[])
 			&sideRTDesc,
 			D3D12_RESOURCE_STATE_RENDER_TARGET,
 			&sideRTClearValue,
-			IID_PPV_ARGS(&sideRenderTargets[i])
+			IID_PPV_ARGS(&backDepthRenderTargets[i])
 		));
-		sideRenderTargets[i]->SetName(L"back depth write targets");
+		backDepthRenderTargets[i]->SetName(L"back depth write targets");
+
+		ThrowIfFailed(device->CreateCommittedResource(
+			&heapProps,
+			D3D12_HEAP_FLAG_NONE,
+			&sideRTDesc,
+			D3D12_RESOURCE_STATE_RENDER_TARGET,
+			&sideRTClearValue,
+			IID_PPV_ARGS(&frontDepthRenderTargets[i])
+		));
+		frontDepthRenderTargets[i]->SetName(L"back depth write targets");
     }
 
     D3D12_DESCRIPTOR_HEAP_DESC sideRtvHeapDesc = {};
-    sideRtvHeapDesc.NumDescriptors = backbufferCount;
+    sideRtvHeapDesc.NumDescriptors = backbufferCount * 2;
     sideRtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
     sideRtvHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
     ThrowIfFailed(device->CreateDescriptorHeap(&sideRtvHeapDesc, IID_PPV_ARGS(&sideRenderTargetViewHeap)));
@@ -267,7 +280,12 @@ int main(int argc, char* argv[])
 
     for (UINT n = 0; n < backbufferCount; n++)
     {
-        device->CreateRenderTargetView(sideRenderTargets[n], nullptr, sideRtvHandle);
+        device->CreateRenderTargetView(backDepthRenderTargets[n], nullptr, sideRtvHandle);
+        sideRtvHandle.ptr += (1 * rtvDescriptorSize);
+    }
+    for (UINT n = 0; n < backbufferCount; n++)
+    {
+        device->CreateRenderTargetView(frontDepthRenderTargets[n], nullptr, sideRtvHandle);
         sideRtvHandle.ptr += (1 * rtvDescriptorSize);
     }
 
@@ -319,6 +337,13 @@ int main(int argc, char* argv[])
     Mesh cubeMesh;
     cubeMesh.loadFromObj(device, "../Assets/cube.obj");
 
+    Vertex a = { {-3.0f, -1.0f, 0.0f}, {3.f, 3.f, 3.f}, {3.f, 3.f, 3.f}, {3.f, 3.f} };
+    Vertex b = { {1.0f, -1.0f, 0.0f}, {3.f, 3.f, 3.f}, {3.f, 3.f, 3.f}, {3.f, 3.f} };
+    Vertex c = { {1.0f, 3.0f, 0.0f}, {3.f, 3.f, 3.f}, {3.f, 3.f, 3.f}, {3.f, 3.f} };
+    std::vector<Vertex> tri = { a, b, c };
+    Mesh triangle;
+    triangle.loadFromVertices(device, tri);
+
 	//uint32_t indexBufferData[3] = {0, 1, 2};
 
 	//ID3D12Resource* indexBuffer;
@@ -365,21 +390,26 @@ int main(int argc, char* argv[])
 
 	struct mvp
 	{
-		glm::mat4 projectionMatrix;
-		glm::mat4 modelMatrix;
-		glm::mat4 viewMatrix;
+		glm::mat4 mvpmat;
+		glm::mat4 inverseVP;
 	} cbVS;
 
-    cbVS.projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
+    auto projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
+
+	//projectionMatrix = glm::translate(glm::mat4(1.f), glm::vec3(0.0f,0.0f,0.5f)) * glm::scale(glm::mat4(1.f), glm::vec3(1.0f,1.0f,0.5f)) * projectionMatrix;
     glm::vec3 eye(25.2203f, 44.637f, -12.9169f);
     glm::vec3 eye_dir(-0.409304f, -0.27564f, 0.896766f);
     glm::vec3 up(0.f, 1.f, 0.f);
-    cbVS.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
-    cbVS.modelMatrix = glm::mat4(1.f);
+    auto viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
+    auto modelMatrix = glm::mat4(1.f);
+    cbVS.mvpmat = projectionMatrix * viewMatrix * modelMatrix;
 
     VertexShader triangleVertexShader(L"../Assets/triangle.vert.hlsl");
     PixelShader trianglePixelShader(L"../Assets/triangle.px.hlsl");
     PixelShader depthPixelShader(L"../Assets/depth_save.px.hlsl");
+
+	VertexShader noopVertexShader(L"../Assets/noop.vert.hlsl");
+	PixelShader volumePixelShader(L"../Assets/volumetric.px.hlsl");
 
 	Pipeline pipeline;
 	pipeline.Initialize(device, &triangleVertexShader, &trianglePixelShader);
@@ -390,14 +420,22 @@ int main(int argc, char* argv[])
 	depthBackPipeline.Initialize(device, &triangleVertexShader, &depthPixelShader);
 
 	Pipeline depthFrontPipeline;
-    depthFrontPipeline.CullMode = D3D12_CULL_MODE_BACK;
+    depthFrontPipeline.CullMode = D3D12_CULL_MODE_FRONT;
     depthFrontPipeline.writeDepth = false;
 	depthFrontPipeline.Initialize(device, &triangleVertexShader, &depthPixelShader);
+
+	Pipeline volumetricPipeline;
+    volumetricPipeline.useAlphaBlend = true;
+	volumetricPipeline.Initialize(device, &noopVertexShader, &volumePixelShader);
 
     ConstantBuffer sceneBuffer;
     sceneBuffer.Initialize(device, sizeof(cbVS));
     UINT8* sceneBufferMapped = sceneBuffer.Map();
 
+    //output.attachment0 = float4(1.0f, 1.0f, 1.0f, 1.0f);
+
+    //output.attachment0 = float4(pixelInput.normal + float3(0.5f), 1.0f);
+    ////output.attachment0 = float4(1.0f, 1.0f, 1.0f, 1.0f);
     Texture texture;
     texture.LoadFromFile(device, commandQueue, L"../Assets/lost_empire-RGBA.png");
 
@@ -418,9 +456,12 @@ int main(int argc, char* argv[])
     cubeBuffer.Initialize(device, sizeof(mvp));
     UINT8* cubeBufferMapped = cubeBuffer.Map();
     mvp CubeMvp;
-    CubeMvp.projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
-    CubeMvp.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
-    CubeMvp.modelMatrix = glm::scale(glm::mat4(1.f),glm::vec3(4.f));
+    auto CubeMvpprojectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
+	//CubeMvpprojectionMatrix = glm::translate(glm::mat4(1.f), glm::vec3(0.0f,0.0f,0.5f)) * glm::scale(glm::mat4(1.f), glm::vec3(1.0f,1.0f,0.5f)) * CubeMvpprojectionMatrix;
+    auto CubeMvpviewMatrix = glm::lookAt(eye, eye + eye_dir, up);
+    auto CubeMvpmodelMatrix = glm::scale(glm::mat4(1.f),glm::vec3(4.f));
+    CubeMvp.mvpmat = CubeMvpprojectionMatrix * CubeMvpviewMatrix * CubeMvpmodelMatrix;
+    CubeMvp.inverseVP = glm::inverse(CubeMvpprojectionMatrix* CubeMvpviewMatrix);
 	memcpy(cubeBufferMapped, &CubeMvp, sizeof(mvp));
 
 
@@ -488,8 +529,12 @@ int main(int argc, char* argv[])
         }
 
         
-		cbVS.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
-		CubeMvp.viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
+		viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
+		cbVS.mvpmat = projectionMatrix * viewMatrix * modelMatrix;
+        
+		CubeMvpviewMatrix = glm::lookAt(eye, eye + eye_dir, up);
+		CubeMvp.mvpmat = CubeMvpprojectionMatrix * CubeMvpviewMatrix * CubeMvpmodelMatrix;
+		CubeMvp.inverseVP = glm::inverse(CubeMvpprojectionMatrix * CubeMvpviewMatrix);
 
 		//std::cerr << "\r" << static_cast<int>((static_cast<double>(imageHeight - j) / imageHeight) * 100.0) << "% of file write is completed         " << std::flush;
         //std::cout << "eye " << eye.x << " " << eye.y << " " << eye.z << std::endl;
@@ -546,17 +591,42 @@ int main(int argc, char* argv[])
 		const float clearColorx[] = {0.0f, 0.0f, 0.0f, 0.0f};
 		commandList->ClearRenderTargetView(rtvHandle3, clearColorx, 0, nullptr);
         
-        CopyTexturePlain(commandList, D3D12_RESOURCE_STATE_RENDER_TARGET, sideRenderTargets[frameIndex], D3D12_RESOURCE_STATE_DEPTH_WRITE, depthStencilBuffer);
-
+        CopyTexturePlain(commandList, D3D12_RESOURCE_STATE_RENDER_TARGET, backDepthRenderTargets[frameIndex], D3D12_RESOURCE_STATE_DEPTH_WRITE, depthStencilBuffer);
+		
         commandList->OMSetRenderTargets(1, &rtvHandle3, FALSE, &dsvHandle);
 
         depthBackPipeline.SetPipelineState(commandAllocator, commandList);
     	depthBackPipeline.BindConstantBuffer("cb", &cubeBuffer, commandList);
 		commandList->IASetVertexBuffers(0, 1, &cubeMesh.vertexBufferView);
-		//commandList->IASetIndexBuffer(&indexBufferView);
         commandList->DrawInstanced(cubeMesh._vertices.size(), 1, 0, 0);
 
-		//commandList->DrawIndexedInstanced(3, 1, 0, 0, 0);
+		D3D12_CPU_DESCRIPTOR_HANDLE
+			rtvHandle4(sideRenderTargetViewHeap->GetCPUDescriptorHandleForHeapStart());
+		rtvHandle4.ptr = rtvHandle4.ptr + ((frameIndex + backbufferCount) * rtvDescriptorSize);
+
+		commandList->ClearRenderTargetView(rtvHandle4, clearColorx, 0, nullptr);
+        
+        commandList->OMSetRenderTargets(1, &rtvHandle4, FALSE, &dsvHandle);
+        depthFrontPipeline.SetPipelineState(commandAllocator, commandList);
+    	depthFrontPipeline.BindConstantBuffer("cb", &cubeBuffer, commandList);
+		commandList->IASetVertexBuffers(0, 1, &cubeMesh.vertexBufferView);
+        commandList->DrawInstanced(cubeMesh._vertices.size(), 1, 0, 0);
+
+
+		commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(backDepthRenderTargets[frameIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE));
+		commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(frontDepthRenderTargets[frameIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE));
+        
+        commandList->OMSetRenderTargets(1, &rtvHandle2, FALSE, &dsvHandle);
+        commandList->ClearDepthStencilView(dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
+                                           D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);
+
+        volumetricPipeline.SetPipelineState(commandAllocator, commandList);
+    	volumetricPipeline.BindConstantBuffer("cb", &cubeBuffer, commandList);
+    	volumetricPipeline.BindTexture(device, "frontCulled", backDepthRenderTargets[frameIndex]);
+    	volumetricPipeline.BindTexture(device, "backCulled", frontDepthRenderTargets[frameIndex]);
+		commandList->IASetVertexBuffers(0, 1, &triangle.vertexBufferView);
+        commandList->DrawInstanced(triangle._vertices.size(), 1, 0, 0);
+
 
 		D3D12_RESOURCE_BARRIER presentBarrier;
 		presentBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;

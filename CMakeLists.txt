@@ -42,6 +42,12 @@ file(GLOB_RECURSE SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/Source/*.h
 )
 
+file(GLOB_RECURSE SHADER_FILES 
+    ${CMAKE_CURRENT_SOURCE_DIR}/Assets/*.hlsl
+)
+
+add_custom_target(Shaders SOURCES ${SHADER_FILES})
+
 add_executable(${PROJECT_NAME} ${SOURCES})
 
 target_precompile_headers(${PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/Source/pch.h)

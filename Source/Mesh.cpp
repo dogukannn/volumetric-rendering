@@ -107,3 +107,47 @@ bool Mesh::loadFromObj(ID3D12Device* device, const char* filename)
 
 	return true;
 }
+
+bool Mesh::loadFromVertices(ID3D12Device* device, std::vector<Vertex>& vertices)
+{
+    _vertices = vertices;
+    const UINT vertexBufferSize = _vertices.size() * sizeof(Vertex);
+
+    D3D12_HEAP_PROPERTIES heapProps;
+    heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
+    heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
+    heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
+    heapProps.CreationNodeMask = 1;
+    heapProps.VisibleNodeMask = 1;
+
+    D3D12_RESOURCE_DESC vertexBufferResourceDesc;
+    vertexBufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+    vertexBufferResourceDesc.Alignment = 0;
+    vertexBufferResourceDesc.Width = vertexBufferSize;
+    vertexBufferResourceDesc.Height = 1;
+    vertexBufferResourceDesc.DepthOrArraySize = 1;
+    vertexBufferResourceDesc.MipLevels = 1;
+    vertexBufferResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
+    vertexBufferResourceDesc.SampleDesc.Count = 1;
+    vertexBufferResourceDesc.SampleDesc.Quality = 0;
+    vertexBufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    vertexBufferResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
+
+    ThrowIfFailed(device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &vertexBufferResourceDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&vertexBuffer)));
+
+    UINT8* pVertexDataBegin;
+
+    D3D12_RANGE readRange;
+    readRange.Begin = 0;
+    readRange.End = 0;
+
+    ThrowIfFailed(vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+    memcpy(pVertexDataBegin, _vertices.data(), vertexBufferSize);
+    vertexBuffer->Unmap(0, nullptr);
+
+    vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
+    vertexBufferView.StrideInBytes = sizeof(Vertex);
+    vertexBufferView.SizeInBytes = vertexBufferSize;
+
+	return true;
+}

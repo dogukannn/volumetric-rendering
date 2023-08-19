@@ -10,6 +10,7 @@ public:
 	void SetPipelineState(ID3D12CommandAllocator* commandAllocator, ID3D12GraphicsCommandList* commandList);
 
 	void BindTexture(ID3D12Device* device, std::string name, class Texture* texture);
+	void BindTexture(ID3D12Device* device, std::string name, ID3D12Resource* texture);
 	void BindConstantBuffer(std::string name, class ConstantBuffer* constantBuffer, ID3D12GraphicsCommandList* commandList);
 
 	void Release();
@@ -17,6 +18,7 @@ public:
     ID3D12PipelineState* PipelineState = nullptr;
 	ID3D12DescriptorHeap* DescriptorHeap = nullptr;
 	bool writeDepth = true;
+	bool useAlphaBlend = false;
 
 	VertexShader* VShader;
 	PixelShader* PShader;

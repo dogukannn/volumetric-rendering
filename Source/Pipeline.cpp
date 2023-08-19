@@ -78,9 +78,32 @@ void Pipeline::Initialize(ID3D12Device* device, VertexShader* vertexShader, Pixe
 		D3D12_LOGIC_OP_NOOP,
 		D3D12_COLOR_WRITE_ENABLE_ALL,
 	};
+
+	D3D12_BLEND_DESC AlphaBlend =
+	{
+		FALSE, // AlphaToCoverageEnable
+		FALSE, // IndependentBlendEnable
+		{
+			{
+				TRUE, // BlendEnable
+				FALSE, // LogicOpEnable
+				D3D12_BLEND_ONE, // SrcBlend
+				D3D12_BLEND_INV_SRC_ALPHA, // DestBlend
+				D3D12_BLEND_OP_ADD, // BlendOp
+				D3D12_BLEND_ONE, // SrcBlendAlpha
+				D3D12_BLEND_INV_SRC_ALPHA, // DestBlendAlpha
+				D3D12_BLEND_OP_ADD, // BlendOpAlpha
+				D3D12_LOGIC_OP_NOOP,
+				D3D12_COLOR_WRITE_ENABLE_ALL
+			}
+		}
+	};
+
 	for (UINT i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i)
 		blendDesc.RenderTarget[i] = defaultRenderTargetBlendDesc;
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+	if(useAlphaBlend)
+		psoDesc.BlendState = AlphaBlend;
     //psoDesc.DepthStencilState.DepthEnable = FALSE;
 	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 	if(!writeDepth)
@@ -146,6 +169,27 @@ void Pipeline::BindTexture(ID3D12Device* device, std::string name, class Texture
 	srvHandle.ptr = srvHandle.ptr + device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * HeapIndexMap[name];
 
 	device->CreateShaderResourceView(texture->Resource, &srvDesc, srvHandle);
+}
+
+void Pipeline::BindTexture(ID3D12Device* device, std::string name, ID3D12Resource* texture)
+{
+	assert(texture);
+
+	if(HeapIndexMap.count(name) <= 0)
+	{
+		std::cout << "cant find texture named in heap " << std::endl;
+	}
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Format = texture->GetDesc().Format;
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+	srvDesc.Texture2D.MipLevels = 1;
+
+	D3D12_CPU_DESCRIPTOR_HANDLE srvHandle(DescriptorHeap->GetCPUDescriptorHandleForHeapStart());
+	srvHandle.ptr = srvHandle.ptr + device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) * HeapIndexMap[name];
+
+	device->CreateShaderResourceView(texture, &srvDesc, srvHandle);
 }
 
 void Pipeline::BindConstantBuffer(std::string name, ConstantBuffer* constantBuffer, ID3D12GraphicsCommandList* commandList)
