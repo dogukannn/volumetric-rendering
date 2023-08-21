@@ -7,6 +7,7 @@
 #include <vector>
 
 #define GLM_DEPTH_ZERO_TO_ONE
+#include <chrono>
 #include <glm/matrix.hpp>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -288,7 +289,6 @@ int main(int argc, char* argv[])
         device->CreateRenderTargetView(frontDepthRenderTargets[n], nullptr, sideRtvHandle);
         sideRtvHandle.ptr += (1 * rtvDescriptorSize);
     }
-
     
 	//create depth stencil
     ID3D12Resource* depthStencilBuffer;
@@ -344,54 +344,12 @@ int main(int argc, char* argv[])
     Mesh triangle;
     triangle.loadFromVertices(device, tri);
 
-	//uint32_t indexBufferData[3] = {0, 1, 2};
-
-	//ID3D12Resource* indexBuffer;
-	//D3D12_INDEX_BUFFER_VIEW indexBufferView;
-
-	//const UINT indexBufferSize = sizeof(indexBufferData);
-
-	//heapProps.Type = D3D12_HEAP_TYPE_UPLOAD;
-	//heapProps.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
-	//heapProps.MemoryPoolPreference = D3D12_MEMORY_POOL_UNKNOWN;
-	//heapProps.CreationNodeMask = 1;
-	//heapProps.VisibleNodeMask = 1;
-
-	//vertexBufferResourceDesc.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-	//vertexBufferResourceDesc.Alignment = 0;
-	//vertexBufferResourceDesc.Width = indexBufferSize;
-	//vertexBufferResourceDesc.Height = 1;
-	//vertexBufferResourceDesc.DepthOrArraySize = 1;
-	//vertexBufferResourceDesc.MipLevels = 1;
-	//vertexBufferResourceDesc.Format = DXGI_FORMAT_UNKNOWN;
-	//vertexBufferResourceDesc.SampleDesc.Count = 1;
-	//vertexBufferResourceDesc.SampleDesc.Quality = 0;
-	//vertexBufferResourceDesc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-	//vertexBufferResourceDesc.Flags = D3D12_RESOURCE_FLAG_NONE;
-
-	//ThrowIfFailed(device->CreateCommittedResource(
- //   &heapProps, D3D12_HEAP_FLAG_NONE, &vertexBufferResourceDesc,
- //   D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&indexBuffer)));
-
-	//UINT8* pIndexDataBegin;
-
-	//D3D12_RANGE indexReadRange;
-	//indexReadRange.Begin = 0;
-	//indexReadRange.End = 0;
-
-	//ThrowIfFailed(indexBuffer->Map(0, &indexReadRange,
-	//							   reinterpret_cast<void**>(&pIndexDataBegin)));
-	//memcpy(pIndexDataBegin, indexBufferData, sizeof(indexBufferData));
-	//indexBuffer->Unmap(0, nullptr);
-
-	//indexBufferView.BufferLocation = indexBuffer->GetGPUVirtualAddress();
-	//indexBufferView.Format = DXGI_FORMAT_R32_UINT;
-	//indexBufferView.SizeInBytes = indexBufferSize;
-
 	struct mvp
 	{
 		glm::mat4 mvpmat;
 		glm::mat4 inverseVP;
+        glm::vec3 eye;
+        float time;
 	} cbVS;
 
     auto projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
@@ -432,15 +390,10 @@ int main(int argc, char* argv[])
     sceneBuffer.Initialize(device, sizeof(cbVS));
     UINT8* sceneBufferMapped = sceneBuffer.Map();
 
-    //output.attachment0 = float4(1.0f, 1.0f, 1.0f, 1.0f);
-
-    //output.attachment0 = float4(pixelInput.normal + float3(0.5f), 1.0f);
-    ////output.attachment0 = float4(1.0f, 1.0f, 1.0f, 1.0f);
     Texture texture;
     texture.LoadFromFile(device, commandQueue, L"../Assets/lost_empire-RGBA.png");
 
     pipeline.BindTexture(device, "g_texture", &texture);
-    //pipeline.BindConstantBuffer("cb", &sceneBuffer, TODO);
 
 	ID3D12GraphicsCommandList* commandList;
 	ThrowIfFailed(device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -450,7 +403,6 @@ int main(int argc, char* argv[])
 
 
 	memcpy(sceneBufferMapped, &cbVS, sizeof(cbVS));
-
 
     ConstantBuffer cubeBuffer;
     cubeBuffer.Initialize(device, sizeof(mvp));
@@ -462,8 +414,11 @@ int main(int argc, char* argv[])
     auto CubeMvpmodelMatrix = glm::scale(glm::mat4(1.f),glm::vec3(4.f));
     CubeMvp.mvpmat = CubeMvpprojectionMatrix * CubeMvpviewMatrix * CubeMvpmodelMatrix;
     CubeMvp.inverseVP = glm::inverse(CubeMvpprojectionMatrix* CubeMvpviewMatrix);
+    CubeMvp.eye = eye;
 	memcpy(cubeBufferMapped, &CubeMvp, sizeof(mvp));
 
+	std::chrono::time_point<std::chrono::system_clock> startTime;
+	startTime = std::chrono::system_clock::now();
 
 	frameIndex = swapchain->GetCurrentBackBufferIndex();
     SDL_Event event;
@@ -535,13 +490,18 @@ int main(int argc, char* argv[])
 		CubeMvpviewMatrix = glm::lookAt(eye, eye + eye_dir, up);
 		CubeMvp.mvpmat = CubeMvpprojectionMatrix * CubeMvpviewMatrix * CubeMvpmodelMatrix;
 		CubeMvp.inverseVP = glm::inverse(CubeMvpprojectionMatrix * CubeMvpviewMatrix);
+        CubeMvp.eye = eye;
+
+		auto now = std::chrono::system_clock::now();
+		std::chrono::duration<float, std::ratio<1,1>> diff = now - startTime;
+		CubeMvp.time = diff.count();
 
 		//std::cerr << "\r" << static_cast<int>((static_cast<double>(imageHeight - j) / imageHeight) * 100.0) << "% of file write is completed         " << std::flush;
         //std::cout << "eye " << eye.x << " " << eye.y << " " << eye.z << std::endl;
         //std::cout << "eye dir " << eye_dir.x << " " << eye_dir.y << " " << eye_dir.z << std::endl;
         //std::cout << "up " << up.x << " " << up.y << " " << up.z << std::endl;
         //std::cout << "==========================================================" << std::endl;
-		//cbVS.modelMatrix = glm::rotate(cbVS.modelMatrix, glm::radians(1.0f), glm::vec3(0.f, 1.f, 0.f));
+
 		memcpy(sceneBufferMapped, &cbVS, sizeof(cbVS));
 		memcpy(cubeBufferMapped, &CubeMvp, sizeof(mvp));
 
@@ -568,7 +528,6 @@ int main(int argc, char* argv[])
 		CD3DX12_CPU_DESCRIPTOR_HANDLE dsvHandle(dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
         commandList->OMSetRenderTargets(1, &rtvHandle2, FALSE, &dsvHandle);
-        //commandList->OMSetRenderTargets(1, &rtvHandle2, FALSE, nullptr);
 
         commandList->ClearDepthStencilView(dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart(),
                                            D3D12_CLEAR_FLAG_DEPTH, 1.0f, 0, 0, nullptr);

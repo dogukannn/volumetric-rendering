@@ -2,6 +2,8 @@ cbuffer cb : register(b0)
 {
     row_major float4x4 mvp : packoffset(c0);
     row_major float4x4 inverseVP : packoffset(c4);
+    float3 eye : packoffset(c8.x);
+    float time : packoffset(c8.w);
 };
 
 Texture2D g_texture : register(t1);
