@@ -1,7 +1,6 @@
- to compile shaders
- add win sdk bin to path in order to sign shaders???
+Example application to showcase volumetric rendering in a forward pipeline using DirectX12.
 
- ```console 
- x@x:~/Assets$ dxc.exe -T vs_6_0 -E main .\triangle.vert.hlsl -Fo .\triangle.vert.dxil
- x@x:~/Assets$ dxc.exe -T ps_6_0 -E main .\triangle.px.hlsl -Fo .\triangle.px.dxil
- ```
+
+
+https://github.com/dogukannn/volumetric-rendering/assets/35217389/c82a2ac6-38ed-4d91-9981-ac70e7318e43
+
