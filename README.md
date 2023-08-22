@@ -1,4 +1,4 @@
-Example application to showcase volumetric rendering in a forward pipeline using DirectX12.
+Example DirectX12 application to showcase volumetric rendering in a forward pipeline.
 
 
 
