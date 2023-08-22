@@ -1,5 +1,6 @@
 #include <iostream>
 
+//#define DEBUG_CAMERA_LOCATION //uncomment to log camera data
 #define SDL_MAIN_HANDLED
 #include <SDL.h>
 #include <SDL_syswm.h>
@@ -266,7 +267,7 @@ int main(int argc, char* argv[])
 			&sideRTClearValue,
 			IID_PPV_ARGS(&frontDepthRenderTargets[i])
 		));
-		frontDepthRenderTargets[i]->SetName(L"back depth write targets");
+		frontDepthRenderTargets[i]->SetName(L"front depth write targets");
     }
 
     D3D12_DESCRIPTOR_HEAP_DESC sideRtvHeapDesc = {};
@@ -322,21 +323,13 @@ int main(int argc, char* argv[])
 
 	device->CreateDepthStencilView(depthStencilBuffer, &depthStencilDesc, dsDescriptorHeap->GetCPUDescriptorHandleForHeapStart());
 
-
-    // Vertex data for the triangle
-    Vertex vertexBufferData[3] =
-    {
-        { {0.0f, 0.5f, 0.0f}, {0.f, 0.f, 0.f}, {1.0f, 0.0f, 0.0f}, {0.5f, 0.f} },
-        { {0.5f, -0.5f, 0.0f}, {0.f, 0.f, 0.f}, {0.0f, 1.0f, 0.0f}, {0.02f, 1.f} },
-        { {-0.5f, -0.5f, 0.0f},{0.f, 0.f, 0.f}, {0.0f, 0.0f, 1.0f}, {0.98f, 1.f} }
-    };
-
     Mesh mesh;
     mesh.loadFromObj(device, "../Assets/graveyard.obj");
 
     Mesh cubeMesh;
     cubeMesh.loadFromObj(device, "../Assets/cube.obj");
 
+    //vertices for fullscreen triangle
     Vertex a = { {-3.0f, -1.0f, 0.0f}, {3.f, 3.f, 3.f}, {3.f, 3.f, 3.f}, {3.f, 3.f} };
     Vertex b = { {1.0f, -1.0f, 0.0f}, {3.f, 3.f, 3.f}, {3.f, 3.f, 3.f}, {3.f, 3.f} };
     Vertex c = { {1.0f, 3.0f, 0.0f}, {3.f, 3.f, 3.f}, {3.f, 3.f, 3.f}, {3.f, 3.f} };
@@ -344,23 +337,21 @@ int main(int argc, char* argv[])
     Mesh triangle;
     triangle.loadFromVertices(device, tri);
 
-	struct mvp
+	struct ShaderMatrixCB
 	{
-		glm::mat4 mvpmat;
+		glm::mat4 MVP;
 		glm::mat4 inverseVP;
         glm::vec3 eye;
         float time;
 	} cbVS;
 
-    auto projectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
-
-	//projectionMatrix = glm::translate(glm::mat4(1.f), glm::vec3(0.0f,0.0f,0.5f)) * glm::scale(glm::mat4(1.f), glm::vec3(1.0f,1.0f,0.5f)) * projectionMatrix;
+    auto projectionMatrix = glm::perspective(glm::radians(46.f), 1.33f, 1.0f, 1000.f); // defined GLM_DEPTH_ZERO_TO_ONE for dx12s 0 to 1 depth
     glm::vec3 eye(25.2203f, 44.637f, -12.9169f);
     glm::vec3 eye_dir(-0.409304f, -0.27564f, 0.896766f);
     glm::vec3 up(0.f, 1.f, 0.f);
     auto viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
     auto modelMatrix = glm::mat4(1.f);
-    cbVS.mvpmat = projectionMatrix * viewMatrix * modelMatrix;
+    cbVS.MVP = projectionMatrix * viewMatrix * modelMatrix;
 
     VertexShader triangleVertexShader(L"../Assets/triangle.vert.hlsl");
     PixelShader trianglePixelShader(L"../Assets/triangle.px.hlsl");
@@ -401,21 +392,19 @@ int main(int argc, char* argv[])
 											IID_PPV_ARGS(&commandList)));
     commandList->Close();
 
-
 	memcpy(sceneBufferMapped, &cbVS, sizeof(cbVS));
 
     ConstantBuffer cubeBuffer;
-    cubeBuffer.Initialize(device, sizeof(mvp));
+    cubeBuffer.Initialize(device, sizeof(ShaderMatrixCB));
     UINT8* cubeBufferMapped = cubeBuffer.Map();
-    mvp CubeMvp;
+    ShaderMatrixCB CubeMvp;
     auto CubeMvpprojectionMatrix = glm::perspective(glm::radians(45.f), 1.33f, 1.0f, 1000.f);
-	//CubeMvpprojectionMatrix = glm::translate(glm::mat4(1.f), glm::vec3(0.0f,0.0f,0.5f)) * glm::scale(glm::mat4(1.f), glm::vec3(1.0f,1.0f,0.5f)) * CubeMvpprojectionMatrix;
     auto CubeMvpviewMatrix = glm::lookAt(eye, eye + eye_dir, up);
     auto CubeMvpmodelMatrix = glm::scale(glm::mat4(1.f),glm::vec3(4.f));
-    CubeMvp.mvpmat = CubeMvpprojectionMatrix * CubeMvpviewMatrix * CubeMvpmodelMatrix;
+    CubeMvp.MVP = CubeMvpprojectionMatrix * CubeMvpviewMatrix * CubeMvpmodelMatrix;
     CubeMvp.inverseVP = glm::inverse(CubeMvpprojectionMatrix* CubeMvpviewMatrix);
     CubeMvp.eye = eye;
-	memcpy(cubeBufferMapped, &CubeMvp, sizeof(mvp));
+	memcpy(cubeBufferMapped, &CubeMvp, sizeof(ShaderMatrixCB));
 
 	std::chrono::time_point<std::chrono::system_clock> startTime;
 	startTime = std::chrono::system_clock::now();
@@ -483,12 +472,11 @@ int main(int argc, char* argv[])
             eye_dir = direction;
         }
 
-        
 		viewMatrix = glm::lookAt(eye, eye + eye_dir, up);
-		cbVS.mvpmat = projectionMatrix * viewMatrix * modelMatrix;
+		cbVS.MVP = projectionMatrix * viewMatrix * modelMatrix;
         
 		CubeMvpviewMatrix = glm::lookAt(eye, eye + eye_dir, up);
-		CubeMvp.mvpmat = CubeMvpprojectionMatrix * CubeMvpviewMatrix * CubeMvpmodelMatrix;
+		CubeMvp.MVP = CubeMvpprojectionMatrix * CubeMvpviewMatrix * CubeMvpmodelMatrix;
 		CubeMvp.inverseVP = glm::inverse(CubeMvpprojectionMatrix * CubeMvpviewMatrix);
         CubeMvp.eye = eye;
 
@@ -496,14 +484,15 @@ int main(int argc, char* argv[])
 		std::chrono::duration<float, std::ratio<1,1>> diff = now - startTime;
 		CubeMvp.time = diff.count();
 
-		//std::cerr << "\r" << static_cast<int>((static_cast<double>(imageHeight - j) / imageHeight) * 100.0) << "% of file write is completed         " << std::flush;
-        //std::cout << "eye " << eye.x << " " << eye.y << " " << eye.z << std::endl;
-        //std::cout << "eye dir " << eye_dir.x << " " << eye_dir.y << " " << eye_dir.z << std::endl;
-        //std::cout << "up " << up.x << " " << up.y << " " << up.z << std::endl;
-        //std::cout << "==========================================================" << std::endl;
-
+#ifdef DEBUG_CAMERA_LOCATION
+		std::cerr << "\r" << static_cast<int>((static_cast<double>(imageHeight - j) / imageHeight) * 100.0) << "% of file write is completed         " << std::flush;
+        std::cout << "eye " << eye.x << " " << eye.y << " " << eye.z << std::endl;
+        std::cout << "eye dir " << eye_dir.x << " " << eye_dir.y << " " << eye_dir.z << std::endl;
+        std::cout << "up " << up.x << " " << up.y << " " << up.z << std::endl;
+        std::cout << "==========================================================" << std::endl;
+#endif
 		memcpy(sceneBufferMapped, &cbVS, sizeof(cbVS));
-		memcpy(cubeBufferMapped, &CubeMvp, sizeof(mvp));
+		memcpy(cubeBufferMapped, &CubeMvp, sizeof(ShaderMatrixCB));
 
 		ThrowIfFailed(commandAllocator->Reset());
 
@@ -511,15 +500,7 @@ int main(int argc, char* argv[])
 
         pipeline.SetPipelineState(commandAllocator, commandList);
 
-		D3D12_RESOURCE_BARRIER renderTargetBarrier;
-		renderTargetBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		renderTargetBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		renderTargetBarrier.Transition.pResource = renderTargets[frameIndex];
-		renderTargetBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_PRESENT;
-		renderTargetBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		renderTargetBarrier.Transition.Subresource =
-			D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-		commandList->ResourceBarrier(1, &renderTargetBarrier);
+        commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
 
 		D3D12_CPU_DESCRIPTOR_HANDLE
 			rtvHandle2(renderTargetViewHeap->GetCPUDescriptorHandleForHeapStart());
@@ -586,16 +567,7 @@ int main(int argc, char* argv[])
 		commandList->IASetVertexBuffers(0, 1, &triangle.vertexBufferView);
         commandList->DrawInstanced(triangle._vertices.size(), 1, 0, 0);
 
-
-		D3D12_RESOURCE_BARRIER presentBarrier;
-		presentBarrier.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
-		presentBarrier.Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
-		presentBarrier.Transition.pResource = renderTargets[frameIndex];
-		presentBarrier.Transition.StateBefore = D3D12_RESOURCE_STATE_RENDER_TARGET;
-		presentBarrier.Transition.StateAfter = D3D12_RESOURCE_STATE_PRESENT;
-		presentBarrier.Transition.Subresource = D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;
-
-		commandList->ResourceBarrier(1, &presentBarrier);
+        commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[frameIndex], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
 
 		ThrowIfFailed(commandList->Close());
 
@@ -603,8 +575,6 @@ int main(int argc, char* argv[])
 		commandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
 		 swapchain->Present(1, 0);
-
-		// WAITING FOR THE FRAME TO COMPLETE BEFORE CONTINUING IS NOT BEST PRACTICE.
 
 		// Signal and increment the fence value.
 		ThrowIfFailed(commandQueue->Signal(fence, fenceValue++));

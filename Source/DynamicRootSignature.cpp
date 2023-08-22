@@ -84,7 +84,7 @@ bool DynamicRootSignature::Initialize(ID3D12Device* device, VertexShader* vertex
         ThrowIfFailed(D3D12SerializeVersionedRootSignature(&rootSignatureDesc, &signature, &error));
         ThrowIfFailed(
             device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&rootSignature)));
-        rootSignature->SetName(L"Hello Triangle Root Signature");
+        rootSignature->SetName(L"Dynamic Root Signature");
     }
     catch (std::exception e)
     {

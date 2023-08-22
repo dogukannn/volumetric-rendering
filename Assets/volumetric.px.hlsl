@@ -25,12 +25,10 @@ SamplerState s1 : register(s0);
 
 float3 WorldPosFromDepth(float depth, float2 uv) {
     float z = depth;
-
     float4 clipSpacePosition = float4(uv * 2.0 - 1.0, z, 1.0);
     clipSpacePosition.y *= -1.0f;
     float4 worldSpacePosition = mul(clipSpacePosition, inverseVP);
     worldSpacePosition /= worldSpacePosition.w;
-
     return worldSpacePosition.xyz;
 }
 
@@ -38,9 +36,6 @@ float3 WorldPosFromDepth(float depth, float2 uv) {
 float rand(float3 p) 
 {
     return frac(sin(dot(p, float3(12.345, 67.89, 412.12))) * 42123.45) * 2.0f - 1.0f;
-    //return frac(sin(dot(p,
-    //                     float3(12.9898,78.233,24.52345)))*
-    //    43758.5453123) * 2.0f - .9f;
 }
 
 float valueNoise(float3 p)
@@ -127,7 +122,7 @@ PixelOutput main(PixelInput pixelInput)
 {
     float2 uv = pixelInput.position.xy/float2(800, 600);
     int2 uvi = int2(floor(uv.x), floor(uv.y));
-    //float exitDepth = frontCulled.Sample(s1, uv);
+    //float exitDepth = frontCulled.Sample(s1, uv); //maybe better in some cases
     //float enterDepth = backCulled.Sample(s1, uv);
     float exitDepth = frontCulled.Load(int3(floor(pixelInput.position.x), floor(pixelInput.position.y), 0));
     float enterDepth = backCulled.Load(int3(floor(pixelInput.position.x), floor(pixelInput.position.y), 0));
@@ -139,8 +134,6 @@ PixelOutput main(PixelInput pixelInput)
         discard;
     }
     float4 cloudColor = volumetricMarch(worldPosEnter, worldPosExit);
-    //float4 cloudColor = float4(worldPosEnter.xyz, 1.0f);
-    //cloudColor.x = sin(time);
     output.attachment0 = float4(cloudColor.xyzw);
 
     return output;

@@ -59,7 +59,6 @@ void Pipeline::Initialize(ID3D12Device* device, VertexShader* vertexShader, Pixe
 	rasterDesc.AntialiasedLineEnable = FALSE;
 	rasterDesc.ForcedSampleCount = 0;
 	rasterDesc.ConservativeRaster = D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF;
-	//psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
     psoDesc.RasterizerState = rasterDesc;
 	psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
 
@@ -104,7 +103,7 @@ void Pipeline::Initialize(ID3D12Device* device, VertexShader* vertexShader, Pixe
 	psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
 	if(useAlphaBlend)
 		psoDesc.BlendState = AlphaBlend;
-    //psoDesc.DepthStencilState.DepthEnable = FALSE;
+
 	psoDesc.DepthStencilState = CD3DX12_DEPTH_STENCIL_DESC(D3D12_DEFAULT);
 	if(!writeDepth)
 	{
@@ -134,8 +133,6 @@ void Pipeline::Initialize(ID3D12Device* device, VertexShader* vertexShader, Pixe
 
 void Pipeline::SetPipelineState(ID3D12CommandAllocator* commandAllocator, ID3D12GraphicsCommandList* commandList)
 {
-	//ThrowIfFailed(commandList->Reset(commandAllocator, PipelineState));
-
 	commandList->SetPipelineState(PipelineState);
 
 	commandList->SetGraphicsRootSignature(RootSignature->rootSignature);
@@ -200,7 +197,6 @@ void Pipeline::BindConstantBuffer(std::string name, ConstantBuffer* constantBuff
 	}
 
 	auto index = RootSignature->Parameters.FreeParameterIndexMap[name];
-	//ConstantBufferAddresses[index] = constantBuffer->Resource->GetGPUVirtualAddress();
 
 	commandList->SetGraphicsRootConstantBufferView(index, constantBuffer->Resource->GetGPUVirtualAddress());
 }

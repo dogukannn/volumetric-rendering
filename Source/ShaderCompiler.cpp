@@ -25,7 +25,6 @@ bool ShaderCompiler::CompileVertexShader(LPCWSTR shaderPath, ShaderCompileOutput
         shaderName,            // Optional shader source file name for error reporting and for PIX shader source view.  
         L"-E", L"main",              // Entry point.
         L"-T", L"vs_6_0",            // Target.
-        L"-Zi",
     };
 
     CComPtr<IDxcBlobUtf16> outShaderName;
@@ -39,7 +38,6 @@ bool ShaderCompiler::CompilePixelShader(LPCWSTR shaderPath, ShaderCompileOutput&
         shaderName,                  // Optional shader source file name for error reporting and for PIX shader source view.  
         L"-E", L"main",              // Entry point.
         L"-T", L"ps_6_0",            // Target.
-        L"-Zi",
     };
 
     CComPtr<IDxcBlobUtf16> outShaderName;
