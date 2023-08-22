@@ -88,16 +88,20 @@ float4 volumetricMarch(float3 enter, float3 exit)
 
     float depth = 0.0;
     float4 color = float4(0., 0., 0., 0.);
+
+    float minDistance = length(eye - enter);
+    float maxDistance = length(eye - exit);
     
     for (int i = 0; i < 250; i++)
     {
         float3 p = ro + depth * rd;
-        if(p.x < exit.x)
+        float curDist = length(p - ro);
+        if(curDist > maxDistance)
         {
             break;
         }
         float density = 0;
-        if(p.x < enter.x)
+        if(curDist > minDistance)
         {
             density = fbm(p * 0.9);
 			density *= valueNoise(p * 0.4);
